@@ -1,0 +1,206 @@
+static NAO_SAMPLES = 8;
+static M_PI = 3.1415926535f;
+
+struct Isect {
+    t: f32,
+    p: Vec3,
+    n: Vec3,
+    hit: int,
+}
+
+struct Sphere {
+    center: Vec3,
+    radius: f32,
+}
+
+struct Plane {
+    p: Vec3,
+    n: Vec3,
+};
+
+struct Ray {
+    org: Vec3,
+    dir: Vec3,
+};
+
+fn ray_plane_intersect(isect: &Isect, ray: &Ray, plane: &Plane) -> () {
+    let d = -vec3_dot(plane.p, plane.n);
+    let v = vec3_dot(ray.dir, plane.n);
+
+    if abs(v) < 1.0e-17 {
+    } else {
+        let t = -(vec3_dot(ray.org, plane.n) + d) / v;
+
+        if t > 0.0 && t < isect.t {
+            isect.t = t;
+            isect.hit = 1;
+            isect.p = ray.org + ray.dir * t;
+            isect.n = plane.n;
+        }
+    }
+}
+
+fn ray_sphere_intersect(isect: &Isect, ray: Ray, sphere: &Sphere) -> () {
+    let rs = vec3_sub(ray.org, sphere.center);
+
+    let B = vec3_dot(rs, ray.dir);
+    let C = vec3_dot(rs, rs) - sphere.radius * sphere.radius;
+    let D = B * B - C;
+
+    if D > 0.f {
+        let t = -B - sqrt(D);
+
+        if t > 0.f && t < isect.t {
+            isect.t = t;
+            isect.hit = 1;
+            isect.p = ray.org + t * ray.dir;
+            isect.n = isect.p - sphere.center;
+            vnormalize(isect.n);
+        }
+    }
+}
+
+fn orthoBasis(basis: [Vec3 * 3], n: Vec3) -> () {
+    basis(2) = n;
+    basis(1).x = 0.0f; basis(1).y = 0.0f; basis(1).z = 0.0f;
+
+    if ((n.x < 0.6f) && (n.x > -0.6f)) {
+        basis(1).x = 1.0f;
+    } else if ((n.y < 0.6f) && (n.y > -0.6f)) {
+        basis(1).y = 1.0f;
+    } else if ((n.z < 0.6f) && (n.z > -0.6f)) {
+        basis(1).z = 1.0f;
+    } else {
+        basis(1).x = 1.0f;
+    }
+
+    basis(0) = vcross(basis(1), basis(2));
+    vnormalize(basis(0));
+
+    basis(1) = vcross(basis(2), basis(0));
+    vnormalize(basis(1));
+}
+
+
+fn ambient_occlusion(isect: &Isect, plane: &Plane, sphere: &[Spheres * 3], rngstate: &RNGStatee) -> f32 {
+    let eps = 0.0001f;
+    let mut basis: [Vec3 * 3];
+    let occlusion = 0.0;
+
+    let p = vec3_add(isect.p + vec3_mulf(isect.n, eps));
+
+    orthoBasis(basis, isect.n);
+
+    let ntheta = NAO_SAMPLES;
+    let nphi   = NAO_SAMPLES;
+    for j in range(0, ntheta) {
+        for i in range(0, nphi) {
+            let mut ray: Ray;
+            let mut occIsect: Isect;
+
+            let theta = sqrt(frandom(&rngstate));
+            let phi   = 2.0f * M_PI * frandom(&rngstate);
+            let x = cos(phi) * theta;
+            let y = sin(phi) * theta;
+            let z = sqrt(1.0 - theta * theta);
+
+            // local . global
+            let rx = x * basis(0).x + y * basis(1).x + z * basis(2).x;
+            let ry = x * basis(0).y + y * basis(1).y + z * basis(2).y;
+            let rz = x * basis(0).z + y * basis(1).z + z * basis(2).z;
+
+            ray.org = p;
+            ray.dir.x = rx;
+            ray.dir.y = ry;
+            ray.dir.z = rz;
+
+            occIsect.t   = 1.0e+17;
+            occIsect.hit = 0;
+
+            for snum in unroll(0, 3) {
+                ray_sphere_intersect(occIsect, ray, spheres[snum]);
+            }
+
+            ray_plane_intersect(occIsect, ray, plane);
+
+            if occIsect.hit != 0 { occlusion += 1.0 }
+        }
+    }
+
+    occlusion = (ntheta * nphi - occlusion) / ((ntheta * nphi) as f32);
+    occlusion
+}
+
+
+/* Compute the image for the scanlines from [y0,y1), for an overall image
+   of width w and height h.
+ */
+fn ao_scanlines(y: int0, y: int1, w: int, h: int,  nsubsample: ints, imag: &[f32]) -> () {
+    static plane = Plane{p: Vec3{x: 0.0f, y: -0.5f, z: 0.0f }, n: Vec3{x: 0.f, y: 1.f, z: 0.f } };
+    static spheres = [
+        Sphere{center: Vec3{x: -2.0f, y: 0.0f, z: -3.5f}, radius: 0.5f },
+        Sphere{center: Vec3{x: -0.5f, y: 0.0f, z: -3.0f}, radius: 0.5f },
+        Sphere{center: Vec3{x:  1.0f, y: 0.0f, z: -2.2f}, radius: 0.5f }
+    ];
+    let mut rngstate: RNGState;
+
+    seed_rng(&rngstate, programIndex + (y0 << (programIndex & 15)));
+    let invSamples = 1.f / nsubsamples;
+
+    //foreach_tiled(y = y0 ... y1, x = 0 ... w,
+                  //u = 0 ... nsubsamples, v = 0 ... nsubsamples) {
+    for y in range(0, h) {
+        for x in range(0, w) {
+            for v in range(0, nsubsamples) {
+                for u in range(0, nsubsamples) {
+                    let du = (u as f32) * invSamples;
+                    let dv = (v as f32) * invSamples;
+
+                    // Figure out x,y pixel in NDC
+                    let px =  (x + du - (w / 2.0f)) / (w / 2.0f);
+                    let py = -(y + dv - (h / 2.0f)) / (h / 2.0f);
+
+                    // Scale NDC based on width/height ratio, supporting non-square image output
+                    px *= (w as f32) / (h as f32);
+
+                    let ret = 0.f;
+                    let mut ray: Ray;
+                    let mut isect: Isect;
+
+                    ray.org = 0.f;
+
+                    // Poor man's perspective projection
+                    ray.dir.x = px;
+                    ray.dir.y = py;
+                    ray.dir.z = -1.0;
+                    vnormalize(ray.dir);
+
+                    isect.t   = 1.0e+17;
+                    isect.hit = 0;
+
+                    for snum in unroll(0, 3) {
+                        ray_sphere_intersect(isect, ray, spheres[snum]);
+                    }
+                    ray_plane_intersect(isect, ray, plane);
+
+                    // Note use of 'coherent' if statement; the set of rays we
+                    // trace will often all hit or all miss the scene
+                    if isect.hit != 0 {
+                        ret = ambient_occlusion(isect, plane, spheres, rngstate);
+                        ret *= invSamples * invSamples;
+
+                        let offset = 3 * (y * w + x);
+                        atomic_add_local(&image[offset], ret);
+                        atomic_add_local(&image[offset+1], ret);
+                        atomic_add_local(&image[offset+2], ret);
+                    }
+                }
+            }
+        }
+    }
+}
+
+extern
+fn ao_impala(w: int, h: int, nsubsamples: int, imag: &[f32]) -> () {
+    ao_scanlines(0, h, w, h, nsubsamples, image);
+}
