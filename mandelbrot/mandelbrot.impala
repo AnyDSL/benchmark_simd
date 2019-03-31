@@ -1,0 +1,30 @@
+fn mandel(c_re: f32, c_im: f32, count: int) -> int {
+    let mut z_re = c_re;
+    let mut z_im = c_im;
+    let mut res = 0;
+
+    for i in range(0, count) {
+        if z_re * z_re + z_im * z_im > 4.f { break() }
+
+        let new_re = z_re*z_re - z_im*z_im;
+        let new_im = 2.f * z_re * z_im;
+        z_re = c_re + new_re;
+        z_im = c_im + new_im;
+        res = i
+    }
+
+    res
+}
+
+extern
+fn mandelbrot_impala(x0: f32, y0: f32, x1: f32, y1: f32, width: int, height: int, maxIterations: int, output: &mut [int]) -> () {
+    let (dx, dy) = ((x1 - x0) / (width as f32), (y1 - y0) / (height as f32));
+
+    for j in range(0, height) {
+        for i in range(0, width) {
+            let (x, y) = (x0 + (i as f32) * dx, y0 + (j as f32) * dy);
+            let index = j * width + i;
+            output(index) = mandel(x, y, maxIterations);
+        }
+    }
+}
