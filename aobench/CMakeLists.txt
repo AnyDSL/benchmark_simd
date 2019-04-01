@@ -38,7 +38,7 @@ set (TARGET_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ao.cpp
                     ${CMAKE_CURRENT_SOURCE_DIR}/ao_serial.cpp)
 set (ISPC_IA_TARGETS "sse2-i32x4,sse4-i32x4,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16" CACHE STRING "ISPC IA targets")
 set (ISPC_ARM_TARGETS "neon" CACHE STRING "ISPC ARM targets")
-set(CLANG_FLAGS -march=native)
+set(CLANG_FLAGS -march=native -O3)
 set(IMPALA_FLAGS --log-level info)
 anydsl_runtime_wrap(AO_ANYDSL
     NAME "ao_anydsl"
