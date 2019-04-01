@@ -125,3 +125,38 @@ fn @vec4_lerp2(a: Vec4, b: Vec4, c: Vec4, u: f32, v: f32) -> Vec4 {
         w: lerp2(a.w, b.w, c.w, u, v)
     }
 }
+
+struct RNGState {
+    z1: u32,
+    z2: u32,
+    z3: u32,
+    z4: u32,
+}
+
+fn floatbits(bits: u32) -> f32 { bitcast(bits) }
+
+fn random(state: &mut RNGState) -> u32 {
+    let mut b  = ((state.z1 << 6u) ^ state.z1) >> 13u;
+    state.z1 = ((state.z1 & 4294967294u) << 18u) ^ b;
+    b  = ((state.z2 << 2u) ^ state.z2) >> 27u;
+    state.z2 = ((state.z2 & 4294967288u) << 2u) ^ b;
+    b  = ((state.z3 << 13u) ^ state.z3) >> 21u;
+    state.z3 = ((state.z3 & 4294967280u) << 7u) ^ b;
+    b  = ((state.z4 << 3u) ^ state.z4) >> 12u;
+    state.z4 = ((state.z4 & 4294967168u) << 13u) ^ b;
+    state.z1 ^ state.z2 ^ state.z3 ^ state.z4
+}
+
+fn frandom(state: &mut RNGState) -> f32 {
+    let mut irand = random(state);
+    irand &= (1u<<23u)-1u;
+    floatbits(0x3F800000u | irand)-1.0f
+}
+
+fn seed_rng(state: &mut RNGState, seed: u32) -> () {
+    state.z1 = seed;
+    state.z2 = seed ^ 0xbeeff00du;
+    state.z3 = ((seed & 0xffffu) << 16u) | (seed >> 16u);
+    state.z4 = (((seed & 0xffu) << 24u) | ((seed & 0xff00u)  << 8u) |
+                 ((seed & 0xff0000u) >> 8u) | (seed & 0xff000000u) >> 24u);
+}
