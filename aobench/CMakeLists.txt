@@ -44,12 +44,12 @@ anydsl_runtime_wrap(AO_ANYDSL
     NAME "ao_anydsl"
     CLANG_FLAGS ${CLANG_FLAGS}
     IMPALA_FLAGS ${IMPALA_FLAGS}
-    FILES ao.impala)
-add_library(AO_ANYDSL_LIB ${AO_ANYDSL})
+    FILES ../util.impala ao.impala)
+add_library(ao_anydsl SHARED ${AO_ANYDSL})
 
 add_ispc_example(NAME "aobench" ISPC_SRC_NAME ${ISPC_SRC_NAME}
               ISPC_IA_TARGETS ${ISPC_IA_TARGETS}
               ISPC_ARM_TARGETS ${ISPC_ARM_TARGETS}
               TARGET_SOURCES ${TARGET_SOURCES}
-              LIBRARIES AO_ANYDSL_LIB
+              LIBRARIES ao_anydsl
               USE_COMMON_SETTINGS)

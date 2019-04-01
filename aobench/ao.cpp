@@ -59,7 +59,7 @@ using namespace ispc;
 #define NSUBSAMPLES        2
 
 extern void ao_serial(int w, int h, int nsubsamples, float image[]);
-extern void ao_impala(int w, int h, int nsubsamples, float image[]);
+extern "C" void ao_impala(int w, int h, int nsubsamples, float image[]);
 
 static unsigned int test_iterations[] = {3, 7, 1};
 static unsigned int width, height;
