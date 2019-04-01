@@ -27,11 +27,11 @@ fn ray_plane_intersect(isect: &Isect, ray: &Ray, plane: &Plane) -> () {
     let d = -vec3_dot(plane.p, plane.n);
     let v = vec3_dot(ray.dir, plane.n);
 
-    if abs(v) < 1.0e-17 {
+    if math.absf(v) < 1.0e-17 {
     } else {
         let t = -(vec3_dot(ray.org, plane.n) + d) / v;
 
-        if t > 0.0 && t < isect.t {
+        if t > 0.0f && t < isect.t {
             isect.t = t;
             isect.hit = 1;
             isect.p = ray.org + ray.dir * t;
