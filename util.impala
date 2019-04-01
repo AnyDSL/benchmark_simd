@@ -18,6 +18,12 @@ fn @lerp2(a: f32, b: f32, c: f32, k1: f32, k2: f32) -> f32 {
     (1.0f - k1 - k2) * a + k1 * b + k2 * c
 }
 
+fn floatbits(bits: u32) -> f32 { bitcast(bits) }
+
+/*
+ * Vec2, Vec3, Vec4
+ */
+
 struct Vec2 {
     x: f32,
     y: f32
@@ -126,14 +132,16 @@ fn @vec4_lerp2(a: Vec4, b: Vec4, c: Vec4, u: f32, v: f32) -> Vec4 {
     }
 }
 
+/*
+ * RNGState
+ */
+
 struct RNGState {
     z1: u32,
     z2: u32,
     z3: u32,
     z4: u32,
 }
-
-fn floatbits(bits: u32) -> f32 { bitcast(bits) }
 
 fn random(state: &mut RNGState) -> u32 {
     let mut b  = ((state.z1 << 6u) ^ state.z1) >> 13u;
@@ -160,3 +168,386 @@ fn seed_rng(state: &mut RNGState, seed: u32) -> () {
     state.z4 = (((seed & 0xffu) << 24u) | ((seed & 0xff00u)  << 8u) |
                  ((seed & 0xff0000u) >> 8u) | (seed & 0xff000000u) >> 24u);
 }
+
+/*
+ * math: misc
+ */
+
+fn @floor(f: f32) -> f32 { cpu_intrinsics.floorf(f) }
+
+/*
+ * math: trigonometry
+ */
+
+fn sin(x_full: f32) -> f32 {
+    static pi_over_two_vec = 1.57079637050628662109375f;
+    static two_over_pi_vec = 0.636619746685028076171875f;
+    let scaled = x_full * two_over_pi_vec;
+    let k_real = floor(scaled);
+    let k = k_real as i32;
+
+    // Reduced range version of x
+    let x = x_full - k_real * pi_over_two_vec;
+    let k_mod4 = k & 3;
+    let sin_usecos = (k_mod4 == 1 || k_mod4 == 3);
+    let flip_sign = (k_mod4 > 1);
+
+    // These coefficients are from sollya with fpminimax(sin(x)/x, [|0, 2,
+    // 4, 6, 8, 10|], [|single...|], [0;Pi/2]);
+    static sin_c2 = -0.16666667163372039794921875f;
+    static sin_c4 = 8.333347737789154052734375e-3f;
+    static sin_c6 = -1.9842604524455964565277099609375e-4f;
+    static sin_c8 = 2.760012648650445044040679931640625e-6f;
+    static sin_c10 = -2.50293279435709337121807038784027099609375e-8f;
+
+    static cos_c2 = -0.5f;
+    static cos_c4 = 4.166664183139801025390625e-2f;
+    static cos_c6 = -1.388833043165504932403564453125e-3f;
+    static cos_c8 = 2.47562347794882953166961669921875e-5f;
+    static cos_c10 = -2.59630184018533327616751194000244140625e-7f;
+
+    let (outside, c2, c4, c6, c8, c10) = if sin_usecos { (1.f, cos_c2, cos_c4, cos_c6, cos_c8, cos_c10) } else { (x, sin_c2, sin_c4, sin_c6, sin_c8, sin_c10) };
+
+    let x2 = x * x;
+    let mut formula = x2 * c10 + c8;
+    formula = x2 * formula + c6;
+    formula = x2 * formula + c4;
+    formula = x2 * formula + c2;
+    formula = x2 * formula + 1.f;
+    formula *= outside;
+
+    if flip_sign { -formula } else { formula }
+}
+
+fn cos(x_full: f32) -> f32 {
+    static pi_over_two_vec = 1.57079637050628662109375f;
+    static two_over_pi_vec = 0.636619746685028076171875f;
+    let scaled = x_full * two_over_pi_vec;
+    let k_real = floor(scaled);
+    let k = k_real as i32;
+
+    // Reduced range version of x
+    let x = x_full - k_real * pi_over_two_vec;
+
+    let k_mod4 = k & 3;
+    let cos_usecos = (k_mod4 == 0 || k_mod4 == 2);
+    let flip_sign = (k_mod4 == 1 || k_mod4 == 2);
+
+    let sin_c2 = -0.16666667163372039794921875f;
+    let sin_c4 = 8.333347737789154052734375e-3f;
+    let sin_c6 = -1.9842604524455964565277099609375e-4f;
+    let sin_c8 = 2.760012648650445044040679931640625e-6f;
+    let sin_c10 = -2.50293279435709337121807038784027099609375e-8f;
+
+    let cos_c2 = -0.5f;
+    let cos_c4 = 4.166664183139801025390625e-2f;
+    let cos_c6 = -1.388833043165504932403564453125e-3f;
+    let cos_c8 = 2.47562347794882953166961669921875e-5f;
+    let cos_c10 = -2.59630184018533327616751194000244140625e-7f;
+
+    let (outside, c2, c4, c6, c8, c10) = if cos_usecos { (1.f, cos_c2, cos_c4, cos_c6, cos_c8, cos_c10) } else { (x, sin_c2, sin_c4, sin_c6, sin_c8, sin_c10) };
+
+    let x2 = x * x;
+    let mut formula = x2 * c10 + c8;
+    formula = x2 * formula + c6;
+    formula = x2 * formula + c4;
+    formula = x2 * formula + c2;
+    formula = x2 * formula + 1.f;
+    formula *= outside;
+
+    if flip_sign { -formula } else { formula }
+}
+
+fn sincos(x_full: f32) -> (f32, f32) {
+    let pi_over_two_vec = 1.57079637050628662109375f;
+    let two_over_pi_vec = 0.636619746685028076171875f;
+    let scaled = x_full * two_over_pi_vec;
+    let k_real = floor(scaled);
+    let k = k_real as i32;
+
+    // Reduced range version of x
+    let x = x_full - k_real * pi_over_two_vec;
+    let k_mod4 = k & 3;
+    let cos_usecos = (k_mod4 == 0 || k_mod4 == 2);
+    let sin_usecos = (k_mod4 == 1 || k_mod4 == 3);
+    let sin_flipsign = (k_mod4 > 1);
+    let cos_flipsign = (k_mod4 == 1 || k_mod4 == 2);
+
+    let one_vec = 1.f;
+    let sin_c2 = -0.16666667163372039794921875f;
+    let sin_c4 = 8.333347737789154052734375e-3f;
+    let sin_c6 = -1.9842604524455964565277099609375e-4f;
+    let sin_c8 = 2.760012648650445044040679931640625e-6f;
+    let sin_c10 = -2.50293279435709337121807038784027099609375e-8f;
+
+    let cos_c2 = -0.5f;
+    let cos_c4 = 4.166664183139801025390625e-2f;
+    let cos_c6 = -1.388833043165504932403564453125e-3f;
+    let cos_c8 = 2.47562347794882953166961669921875e-5f;
+    let cos_c10 = -2.59630184018533327616751194000244140625e-7f;
+
+    let x2 = x * x;
+
+    let mut sin_formula = x2 * sin_c10 + sin_c8;
+    let mut cos_formula = x2 * cos_c10 + cos_c8;
+    sin_formula = x2 * sin_formula + sin_c6;
+    cos_formula = x2 * cos_formula + cos_c6;
+
+    sin_formula = x2 * sin_formula + sin_c4;
+    cos_formula = x2 * cos_formula + cos_c4;
+
+    sin_formula = x2 * sin_formula + sin_c2;
+    cos_formula = x2 * cos_formula + cos_c2;
+
+    sin_formula = x2 * sin_formula + one_vec;
+    cos_formula = x2 * cos_formula + one_vec;
+
+    sin_formula *= x;
+
+    let mut sin_result = if sin_usecos { cos_formula } else { sin_formula };
+    let mut cos_result = if cos_usecos { cos_formula } else { sin_formula };
+
+    sin_result = if sin_flipsign { -sin_result } else { sin_result };
+    cos_result = if cos_flipsign { -cos_result } else { cos_result };
+
+    (sin_result, cos_result)
+}
+
+fn tan(x_full: f32) -> f32 {
+    let pi_over_four_vec = 0.785398185253143310546875f;
+    let four_over_pi_vec = 1.27323949337005615234375f;
+
+    let x_lt_0 = x_full < 0.f;
+    let y = if x_lt_0 { -x_full } else { x_full };
+    let scaled = y * four_over_pi_vec;
+
+    let k_real = floor(scaled);
+    let k = k_real as i32;
+
+    let mut x = y - k_real * pi_over_four_vec;
+
+    // if k & 1, x -= Pi/4
+    let need_offset = (k & 1) != 0;
+    x = if need_offset { x - pi_over_four_vec } else { x };
+
+    // if k & 3 == (0 or 3) let z = tan_In...(y) otherwise z = -cot_In0To...
+    let k_mod4 = k & 3;
+    let use_cotan = (k_mod4 == 1) || (k_mod4 == 2);
+
+    let  one_vec = 1.0f;
+
+    let  tan_c2 = 0.33333075046539306640625f;
+    let  tan_c4 = 0.13339905440807342529296875f;
+    let  tan_c6 = 5.3348250687122344970703125e-2f;
+    let  tan_c8 = 2.46033705770969390869140625e-2f;
+    let  tan_c10 = 2.892402000725269317626953125e-3f;
+    let  tan_c12 = 9.500005282461643218994140625e-3f;
+
+    let  cot_c2 = -0.3333333432674407958984375f;
+    let  cot_c4 = -2.222204394638538360595703125e-2f;
+    let  cot_c6 = -2.11752182804048061370849609375e-3f;
+    let  cot_c8 = -2.0846328698098659515380859375e-4f;
+    let  cot_c10 = -2.548247357481159269809722900390625e-5f;
+    let  cot_c12 = -3.5257363606433500535786151885986328125e-7f;
+
+    let x2 = x * x;
+
+    let z =
+        if (use_cotan) {
+            let mut cot_val = x2 * cot_c12 + cot_c10;
+            cot_val = x2 * cot_val + cot_c8;
+            cot_val = x2 * cot_val + cot_c6;
+            cot_val = x2 * cot_val + cot_c4;
+            cot_val = x2 * cot_val + cot_c2;
+            cot_val = x2 * cot_val + one_vec;
+            // The equation is for x * cot(x) but we need -x * cot(x) for the tan part.
+            cot_val /= -x;
+            cot_val
+        } else {
+            let mut tan_val = x2 * tan_c12 + tan_c10;
+            tan_val = x2 * tan_val + tan_c8;
+            tan_val = x2 * tan_val + tan_c6;
+            tan_val = x2 * tan_val + tan_c4;
+            tan_val = x2 * tan_val + tan_c2;
+            tan_val = x2 * tan_val + one_vec;
+            // Equation was for tan(x)/x
+            tan_val *= x;
+            tan_val
+        };
+
+    if x_lt_0 { -z } else { z }
+}
+
+/*
+__declspec(safe)
+static inline f32 atan(f32 x_full) {
+    if (__have_native_trigonometry)
+    {
+      return __atan_varying_f32(x_full);
+    }
+    else if (__math_lib == __math_lib_svml) {
+        return __svml_atanf(x_full);
+    }
+    else if (__math_lib == __math_lib_system) {
+        f32 ret;
+        foreach_active (i) {
+            uniform f32 r = __stdlib_atanf(extract(x_full, i));
+            ret = insert(ret, i, r);
+        }
+        return ret;
+    }
+    else if (__math_lib == __math_lib_ispc ||
+             __math_lib == __math_lib_ispc_fast) {
+        const f32 pi_over_two_vec = 1.57079637050628662109375;
+        // atan(-x) = -atan(x) (so flip from negative to positive first)
+        // if x > 1 -> atan(x) = Pi/2 - atan(1/x)
+        bool x_neg = x_full < 0;
+        f32 x_flipped = x_neg ? -x_full : x_full;
+
+        bool x_gt_1 = x_flipped > 1.;
+        f32 x = x_gt_1 ? 1./x_flipped : x_flipped;
+
+        // These coefficients approximate atan(x)/x
+        const f32 atan_c0 = 0.99999988079071044921875;
+        const f32 atan_c2 = -0.3333191573619842529296875;
+        const f32 atan_c4 = 0.199689209461212158203125;
+        const f32 atan_c6 = -0.14015688002109527587890625;
+        const f32 atan_c8 = 9.905083477497100830078125e-2;
+        const f32 atan_c10 = -5.93664981424808502197265625e-2;
+        const f32 atan_c12 = 2.417283318936824798583984375e-2;
+        const f32 atan_c14 = -4.6721356920897960662841796875e-3;
+
+        f32 x2 = x * x;
+        f32 result = x2 * atan_c14 + atan_c12;
+        result = x2 * result + atan_c10;
+        result = x2 * result + atan_c8;
+        result = x2 * result + atan_c6;
+        result = x2 * result + atan_c4;
+        result = x2 * result + atan_c2;
+        result = x2 * result + atan_c0;
+        result *= x;
+
+        result = x_gt_1 ? pi_over_two_vec - result : result;
+        result = x_neg ? -result : result;
+        return result;
+    }
+}
+
+
+__declspec(safe)
+static inline uniform f32 atan(uniform f32 x_full) {
+    if (__have_native_trigonometry)
+    {
+      return __atan_uniform_f32(x_full);
+    }
+    else if (__math_lib == __math_lib_system ||
+        __math_lib == __math_lib_svml) {
+        return __stdlib_atanf(x_full);
+    }
+    else if (__math_lib == __math_lib_ispc ||
+             __math_lib == __math_lib_ispc_fast) {
+        const uniform f32 pi_over_two_vec = 1.57079637050628662109375;
+        // atan(-x) = -atan(x) (so flip from negative to positive first)
+        // if x > 1 -> atan(x) = Pi/2 - atan(1/x)
+        uniform bool x_neg = x_full < 0;
+        uniform f32 x_flipped = x_neg ? -x_full : x_full;
+
+        uniform bool x_gt_1 = x_flipped > 1.;
+        uniform f32 x = x_gt_1 ? 1./x_flipped : x_flipped;
+
+        // These coefficients approximate atan(x)/x
+        const uniform f32 atan_c0 = 0.99999988079071044921875;
+        const uniform f32 atan_c2 = -0.3333191573619842529296875;
+        const uniform f32 atan_c4 = 0.199689209461212158203125;
+        const uniform f32 atan_c6 = -0.14015688002109527587890625;
+        const uniform f32 atan_c8 = 9.905083477497100830078125e-2;
+        const uniform f32 atan_c10 = -5.93664981424808502197265625e-2;
+        const uniform f32 atan_c12 = 2.417283318936824798583984375e-2;
+        const uniform f32 atan_c14 = -4.6721356920897960662841796875e-3;
+
+        uniform f32 x2 = x * x;
+        uniform f32 result = x2 * atan_c14 + atan_c12;
+        result = x2 * result + atan_c10;
+        result = x2 * result + atan_c8;
+        result = x2 * result + atan_c6;
+        result = x2 * result + atan_c4;
+        result = x2 * result + atan_c2;
+        result = x2 * result + atan_c0;
+        result *= x;
+
+        result = x_gt_1 ? pi_over_two_vec - result : result;
+        result = x_neg ? -result : result;
+        return result;
+    }
+}
+
+
+__declspec(safe)
+static inline f32 atan2(f32 y, f32 x) {
+    if (__have_native_trigonometry)
+    {
+      return __atan2_varying_f32(y,x);
+    }
+    else if (__math_lib == __math_lib_svml) {
+        return __svml_atan2f(y, x);
+    }
+    else if (__math_lib == __math_lib_system) {
+        f32 ret;
+        foreach_active (i) {
+            uniform f32 r = __stdlib_atan2f(extract(y, i), extract(x, i));
+            ret = insert(ret, i, r);
+        }
+        return ret;
+    }
+    else if (__math_lib == __math_lib_ispc ||
+             __math_lib == __math_lib_ispc_fast) {
+        const f32 pi_vec = 3.1415926536;
+        const f32 pi_over_two_vec = 1.5707963267;
+        // atan2(y, x) =
+        //
+        // atan2(y > 0, x = +-0) ->  Pi/2
+        // atan2(y < 0, x = +-0) -> -Pi/2
+        // atan2(y = +-0, x < +0) -> +-Pi
+        // atan2(y = +-0, x >= +0) -> +-0
+        //
+        // atan2(y >= 0, x < 0) ->  Pi + atan(y/x)
+        // atan2(y <  0, x < 0) -> -Pi + atan(y/x)
+        // atan2(y, x > 0) -> atan(y/x)
+        //
+        // and then a bunch of code for dealing with infinities.
+        f32 y_over_x = y/x;
+        f32 atan_arg = atan(y_over_x);
+        bool x_lt_0 = x < 0;
+        bool y_lt_0 = y < 0;
+        f32 offset = x_lt_0 ? (y_lt_0 ? -pi_vec : pi_vec) : 0;
+        return offset + atan_arg;
+    }
+}
+
+
+__declspec(safe)
+static inline uniform f32 atan2(uniform f32 y, uniform f32 x) {
+    if (__have_native_trigonometry)
+    {
+      return __atan2_uniform_f32(y,x);
+    }
+    else if (__math_lib == __math_lib_system ||
+        __math_lib == __math_lib_svml) {
+        return __stdlib_atan2f(y, x);
+    }
+    else if (__math_lib == __math_lib_ispc ||
+             __math_lib == __math_lib_ispc_fast) {
+        const uniform f32 pi_vec = 3.1415927410125732421875;
+        const uniform f32 pi_over_two_vec = 1.57079637050628662109375;
+
+        uniform f32 y_over_x = y/x;
+        uniform f32 atan_arg = atan(y_over_x);
+        uniform bool x_lt_0 = x < 0;
+        uniform bool y_lt_0 = y < 0;
+        uniform f32 offset = x_lt_0 ? (y_lt_0 ? -pi_vec : pi_vec) : 0;
+        return offset + atan_arg;
+    }
+}
+
+
+*/

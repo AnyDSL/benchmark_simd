@@ -78,7 +78,6 @@ fn orthoBasis(basis: &mut [Vec3 * 3], n: Vec3) -> () {
     basis(1) = vec3_normalize(math, vec3_cross(basis(2), basis(0)));
 }
 
-
 fn ambient_occlusion(isect: &Isect, plane: &Plane, spheres: &[Sphere * 3], rngstate: &mut RNGState) -> f32 {
     let eps = 0.0001f;
     let mut basis: [Vec3 * 3];
