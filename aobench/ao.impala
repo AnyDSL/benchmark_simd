@@ -141,9 +141,7 @@ fn ao_scanlines(y0: i32, y1: i32, w: i32, h: i32,  nsubsamples: i32, image: &mut
     ];
     let mut rngstate: RNGState;
 
-    for i in vectorize(8) {
-        seed_rng(&mut rngstate, i as u32 + (y0 as u32 << (i as u32 & 15u)));
-    }
+    seed_rng(&mut rngstate, y0 as u32 + 1u32);
 
     let invSamples = 1.f / (nsubsamples as f32);
 
