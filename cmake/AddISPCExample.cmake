@@ -93,7 +93,7 @@ function(add_ispc_example)
     endif()
     # ISPC command
     add_custom_command(OUTPUT ${ISPC_BUILD_OUTPUT}
-        COMMAND ${ISPC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${ISPC_SRC_NAME}.ispc ${example_ISPC_FLAGS} --target=${ISPC_TARGETS} --arch=${ISPC_ARCH}
+        COMMAND ${ISPC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${ISPC_SRC_NAME}.ispc ${example_ISPC_FLAGS} --target=${ISPC_TARGETS} --arch=${ISPC_ARCH} --pic
                                     -h ${ISPC_HEADER_NAME} -o ${ISPC_OBJ_NAME}
         VERBATIM
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${ISPC_SRC_NAME}.ispc")
