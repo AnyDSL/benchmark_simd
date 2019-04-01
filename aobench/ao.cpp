@@ -59,6 +59,7 @@ using namespace ispc;
 #define NSUBSAMPLES        2
 
 extern void ao_serial(int w, int h, int nsubsamples, float image[]);
+extern void ao_impala(int w, int h, int nsubsamples, float image[]);
 
 static unsigned int test_iterations[] = {3, 7, 1};
 static unsigned int width, height;
@@ -108,7 +109,7 @@ int main(int argc, char **argv)
 {
     if (argc < 3) {
         printf ("%s\n", argv[0]);
-        printf ("Usage: ao [width] [height] [ispc iterations] [tasks iterations] [serial iterations]\n");
+        printf ("Usage: ao [width] [height] [ispc iterations] [AnyDSL iterations] [serial iterations]\n");
         getchar();
         exit(-1);
     }
@@ -148,25 +149,25 @@ int main(int argc, char **argv)
     savePPM("ao-ispc.ppm", width, height);
 
     //
-    // Run the ispc + tasks path, test_iterations times, and report the
+    // Run the AnyDSL path, test_iterations times, and report the
     // minimum time for any of them.
     //
-    double minTimeISPCTasks = 1e30;
+    double minTimeAnyDSL = 1e30;
     for (unsigned int i = 0; i < test_iterations[1]; i++) {
         memset((void *)fimg, 0, sizeof(float) * width * height * 3);
         assert(NSUBSAMPLES == 2);
 
         reset_and_start_timer();
-        ao_ispc_tasks(width, height, NSUBSAMPLES, fimg);
+        ao_impala(width, height, NSUBSAMPLES, fimg);
         double t = get_elapsed_mcycles();
-        printf("@time of ISPC + TASKS run:\t\t\t[%.3f] million cycles\n", t);
-        minTimeISPCTasks = std::min(minTimeISPCTasks, t);
+        printf("@time of AnyDSL run:\t\t\t[%.3f] million cycles\n", t);
+        minTimeAnyDSL = std::min(minTimeAnyDSL, t);
     }
 
     // Report results and save image
-    printf("[aobench ispc + tasks]:\t\t[%.3f] million cycles (%d x %d image)\n",
-           minTimeISPCTasks, width, height);
-    savePPM("ao-ispc-tasks.ppm", width, height);
+    printf("[aobench AnyDSL]:\t\t[%.3f] million cycles (%d x %d image)\n",
+           minTimeAnyDSL, width, height);
+    savePPM("ao-anydsl.ppm", width, height);
 
     //
     // Run the serial path, again test_iteration times, and report the
@@ -185,8 +186,8 @@ int main(int argc, char **argv)
     // Report more results, save another image...
     printf("[aobench serial]:\t\t[%.3f] million cycles (%d x %d image)\n", minTimeSerial,
            width, height);
-    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
-           minTimeSerial / minTimeISPC, minTimeSerial / minTimeISPCTasks);
+    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n",
+           minTimeSerial / minTimeISPC, minTimeSerial / minTimeAnyDSL);
     savePPM("ao-serial.ppm", width, height);
 
     return 0;
