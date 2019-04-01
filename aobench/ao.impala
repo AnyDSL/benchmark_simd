@@ -128,72 +128,78 @@ fn ambient_occlusion(isect: &Isect, plane: &Plane, spheres: &[Sphere * 3], rngst
     occlusion
 }
 
+fn @foreach_tiled(x0: i32, x1: i32, xstep: i32, y0: i32, y1: i32, ulen: i32, vlen: i32, body: fn (i32, i32, i32, i32) -> ()) -> () {
+    for y in range(y0, y1) {
+        for x in range_step(x0, x1, xstep) {
+            for u in range(0, ulen) {
+                for v in range(0, vlen) {
+                    @@body(x, y, u, v)
+                }
+            }
+        }
+    }
+}
 
 /* Compute the image for the scanlines from [y0,y1), for an overall image
    of width w and height h.
  */
-fn ao_scanlines(y0: i32, y1: i32, w: i32, h: i32,  nsubsamples: i32, image: &mut [f32]) -> () {
+fn @ao_scanlines(y0: i32, y1: i32, w: i32, h: i32,  nsubsamples: i32, image: &mut [f32]) -> () {
     static plane = Plane{p: Vec3{x: 0.0f, y: -0.5f, z: 0.0f }, n: Vec3{x: 0.f, y: 1.f, z: 0.f } };
     static spheres = [
         Sphere{center: Vec3{x: -2.0f, y: 0.0f, z: -3.5f}, radius: 0.5f },
         Sphere{center: Vec3{x: -0.5f, y: 0.0f, z: -3.0f}, radius: 0.5f },
         Sphere{center: Vec3{x:  1.0f, y: 0.0f, z: -2.2f}, radius: 0.5f }
     ];
-    let mut rngstate: RNGState;
-
-    seed_rng(&mut rngstate, y0 as u32 + 1u32);
-
     let invSamples = 1.f / (nsubsamples as f32);
 
-    //foreach_tiled(y = y0 ... y1, x = 0 ... w,
-                  //u = 0 ... nsubsamples, v = 0 ... nsubsamples) {
-    for y in range(0, h) {
-        for x in range(0, w) {
-            for v in range(0, nsubsamples) {
-                for u in range(0, nsubsamples) {
-                    let du = (u as f32) * invSamples;
-                    let dv = (v as f32) * invSamples;
+    let vec_len = 8;
+    for i in vectorize(vec_len) {
+        let mut rngstate: RNGState;
+        seed_rng(&mut rngstate, (y0 + i) as u32);
 
-                    // Figure out x,y pixel in NDC
-                    let mut px =  (x as f32 + du - (w as f32 / 2.0f)) / (w as f32 / 2.0f);
-                    let py = -(y as f32 + dv - (h as f32 / 2.0f)) / (h as f32 / 2.0f);
+        for x_, y, u, v in foreach_tiled(0, w, vec_len, y0, y1, nsubsamples, nsubsamples) {
+            let x = x_ + i;
+            let du = (u as f32) * invSamples;
+            let dv = (v as f32) * invSamples;
 
-                    // Scale NDC based on width/height ratio, supporting non-square image output
-                    px *= (w as f32) / (h as f32);
+            // Figure out x,y pixel in NDC
+            let mut px =  (x as f32 + du - (w as f32 / 2.0f)) / (w as f32 / 2.0f);
+            let py = -(y as f32 + dv - (h as f32 / 2.0f)) / (h as f32 / 2.0f);
 
-                    let mut ret = 0.f;
-                    let mut ray: Ray;
-                    let mut isect: Isect;
+            // Scale NDC based on width/height ratio, supporting non-square image output
+            px *= (w as f32) / (h as f32);
 
-                    ray.org = make_vec3(0.f, 0.f, 0.f);
+            let mut ret = 0.f;
+            let mut ray: Ray;
+            let mut isect: Isect;
 
-                    // Poor man's perspective projection
-                    ray.dir.x = px;
-                    ray.dir.y = py;
-                    ray.dir.z = -1.0f;
-                    ray.dir = vec3_normalize(math, ray.dir);
+            ray.org = make_vec3(0.f, 0.f, 0.f);
 
-                    isect.t   = 1.0e+17f;
-                    isect.hit = 0;
+            // Poor man's perspective projection
+            ray.dir.x = px;
+            ray.dir.y = py;
+            ray.dir.z = -1.0f;
+            ray.dir = vec3_normalize(math, ray.dir);
 
-                    for snum in unroll(0, 3) {
-                        ray_sphere_intersect(&mut isect, ray, spheres(snum));
-                    }
+            isect.t   = 1.0e+17f;
+            isect.hit = 0;
 
-                    ray_plane_intersect(&mut isect, ray, plane);
+            for snum in unroll(0, 3) {
+                ray_sphere_intersect(&mut isect, ray, spheres(snum));
+            }
 
-                    // Note use of 'coherent' if statement; the set of rays we
-                    // trace will often all hit or all miss the scene
-                    if isect.hit != 0 {
-                        ret = ambient_occlusion(&mut isect, &plane, &spheres, &mut rngstate);
-                        ret *= invSamples * invSamples;
+            ray_plane_intersect(&mut isect, ray, plane);
 
-                        let offset = 3 * (y * w + x);
-                        image(offset)   += ret;
-                        image(offset+1) += ret;
-                        image(offset+2) += ret;
-                    }
-                }
+            // Note use of 'coherent' if statement; the set of rays we
+            // trace will often all hit or all miss the scene
+            if isect.hit != 0 {
+                ret = ambient_occlusion(&mut isect, &plane, &spheres, &mut rngstate);
+                ret *= invSamples * invSamples;
+
+                let offset = 3 * (y * w + x);
+                image(offset)   += ret;
+                image(offset+1) += ret;
+                image(offset+2) += ret;
             }
         }
     }
