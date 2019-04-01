@@ -206,7 +206,12 @@ fn sin(x_full: f32) -> f32 {
     static cos_c8 = 2.47562347794882953166961669921875e-5f;
     static cos_c10 = -2.59630184018533327616751194000244140625e-7f;
 
-    let (outside, c2, c4, c6, c8, c10) = if sin_usecos { (1.f, cos_c2, cos_c4, cos_c6, cos_c8, cos_c10) } else { (x, sin_c2, sin_c4, sin_c6, sin_c8, sin_c10) };
+    let outside = if sin_usecos { 1.f     } else { x };
+    let c2      = if sin_usecos { cos_c2  } else { sin_c2 };
+    let c4      = if sin_usecos { cos_c4  } else { sin_c4 };
+    let c6      = if sin_usecos { cos_c6  } else { sin_c6 };
+    let c8      = if sin_usecos { cos_c8  } else { sin_c8 };
+    let c10     = if sin_usecos { cos_c10 } else { sin_c10 };
 
     let x2 = x * x;
     let mut formula = x2 * c10 + c8;
