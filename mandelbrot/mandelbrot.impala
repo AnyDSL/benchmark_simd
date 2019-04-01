@@ -20,11 +20,15 @@ extern
 fn mandelbrot_impala(x0: f32, y0: f32, x1: f32, y1: f32, width: int, height: int, maxIterations: int, output: &mut [int]) -> () {
     let (dx, dy) = ((x1 - x0) / (width as f32), (y1 - y0) / (height as f32));
 
+    let vector_length = 8;
     for j in range(0, height) {
-        for i in range(0, width) {
-            let (x, y) = (x0 + (i as f32) * dx, y0 + (j as f32) * dy);
-            let index = j * width + i;
-            output(index) = mandel(x, y, maxIterations);
+        for ii in range_step(0, width, vector_length) {
+            for v in vectorize(vector_length) {
+                let i = ii + v;
+                let (x, y) = (x0 + (i as f32) * dx, y0 + (j as f32) * dy);
+                let index = j * width + i;
+                output(index) = mandel(x, y, maxIterations);
+            }
         }
     }
 }

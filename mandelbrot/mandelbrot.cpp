@@ -50,6 +50,10 @@ extern void mandelbrot_serial(float x0, float y0, float x1, float y1,
                               int width, int height, int maxIterations,
                               int output[]);
 
+extern "C" void mandelbrot_impala(float x0, float y0, float x1, float y1,
+                              int width, int height, int maxIterations,
+                              int output[]);
+
 /* Write a PPM image file with the image of the Mandelbrot set */
 static void
 writePPM(int *buf, int width, int height, const char *fn) {
@@ -109,6 +113,26 @@ int main(int argc, char *argv[]) {
 
     printf("[mandelbrot ispc]:\t\t[%.3f] million cycles\n", minISPC);
     writePPM(buf, width, height, "mandelbrot-ispc.ppm");
+
+    // Clear out the buffer
+    for (unsigned int i = 0; i < width * height; ++i)
+        buf[i] = 0;
+
+    //
+    // Compute the image using the anydsl implementation; report the minimum
+    // time of three runs.
+    //
+    double min_impala = 1e30;
+    for (unsigned int i = 0; i < test_iterations[0]; ++i) {
+        reset_and_start_timer();
+        mandelbrot_impala(x0, y0, x1, y1, width, height, maxIterations, buf);
+        double dt = get_elapsed_mcycles();
+        printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
+        min_impala = std::min(min_impala, dt);
+    }
+
+    printf("[mandelbrot impala]:\t\t[%.3f] million cycles\n", min_impala);
+    writePPM(buf, width, height, "mandelbrot-impala.ppm");
 
     // Clear out the buffer
     for (unsigned int i = 0; i < width * height; ++i)
