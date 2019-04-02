@@ -163,6 +163,8 @@ fn seed_rng(state: &mut RNGState, seed: u32) -> () {
  */
 
 fn @floor(f: f32) -> f32 { cpu_intrinsics.floorf(f) }
+fn @clamp(i: i32, a: i32, b: i32) -> i32 { math.min(math.max(i, a), b) }
+fn @clampf(i: f32, a: f32, b: f32) -> f32 { math.fminf(math.fmaxf(i, a), b) }
 
 /*
  * math: exp, pow

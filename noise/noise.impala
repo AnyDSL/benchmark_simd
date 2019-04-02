@@ -1,0 +1,129 @@
+static NOISE_PERM_SIZE = 256;
+static math = cpu_intrinsics;
+
+static NoisePerm = [
+    151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140,
+    36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120,
+    234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33,
+    88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168,  68, 175, 74, 165, 71,
+    134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133,
+    230, 220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161,
+    1, 216, 80, 73, 209, 76, 132, 187, 208,  89, 18, 169, 200, 196, 135, 130,
+    116, 188, 159, 86, 164, 100, 109, 198, 173, 186,  3, 64, 52, 217, 226, 250,
+    124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227,
+    47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152,  2, 44,
+    154, 163, 70, 221, 153, 101, 155, 167,  43, 172, 9, 129, 22, 39, 253,  19,
+    98, 108, 110, 79, 113, 224, 232, 178, 185,  112, 104, 218, 246, 97, 228, 251,
+    34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249,
+    14, 239, 107, 49, 192, 214,  31, 181, 199, 106, 157, 184, 84, 204, 176, 115,
+    121, 50, 45, 127,  4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72,
+    243, 141, 128, 195, 78, 66, 215, 61, 156, 180, 151, 160, 137, 91, 90, 15,
+    131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99,
+    37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252,
+    219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125,
+    136, 171, 168,  68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158,
+    231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245,
+    40, 244, 102, 143, 54,  65, 25, 63, 161,  1, 216, 80, 73, 209, 76, 132, 187,
+    208,  89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109,
+    198, 173, 186,  3, 64, 52, 217, 226, 250, 124, 123, 5, 202, 38, 147, 118,
+    126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42,
+    223, 183, 170, 213, 119, 248, 152,  2, 44, 154, 163, 70, 221, 153, 101, 155,
+    167,  43, 172, 9, 129, 22, 39, 253,  19, 98, 108, 110, 79, 113, 224, 232,
+    178, 185,  112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144,
+    12, 191, 179, 162, 241,  81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214,
+    31, 181, 199, 106, 157, 184,  84, 204, 176, 115, 121, 50, 45, 127,  4, 150,
+    254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78,
+    66, 215, 61, 156, 180
+];
+
+fn SmoothStep(low: f32, high: f32, value: f32) -> f32 {
+    let v = clampf((value - low) / (high - low), 0.f, 1.f);
+    v * v * (-2.f * v  + 3.f)
+}
+
+
+fn @Floor2Int(val: f32) -> i32 { floor(val) as i32 }
+
+fn Grad(x: i32, y: i32, z: i32, dx: f32, dy: f32, dz: f32) -> f32 {
+    let mut h = NoisePerm(NoisePerm(NoisePerm(x)+y)+z);
+    h &= 15;
+    let u = select(h<8 || h==12 || h==13, dx, dy);
+    let v = select(h<4 || h==12 || h==13, dy, dz);
+    select(h&1 != 0, -u, u) + select(h&2 != 0, -v, v)
+}
+
+fn NoiseWeight(t: f32) -> f32 {
+    let t3 = t*t*t;
+    let t4 = t3*t;
+    6.f*t4*t - 15.f*t4 + 10.f*t3
+}
+
+fn Noise(x: f32, y: f32, z: f32) -> f32 {
+    // Compute noise cell coordinates and offsets
+    let mut ix = Floor2Int(x);
+    let mut iy = Floor2Int(y);
+    let mut iz = Floor2Int(z);
+    let dx = x - (ix as f32);
+    let dy = y - (iy as f32);
+    let dz = z - (iz as f32);
+
+    // Compute gradient weights
+    ix &= (NOISE_PERM_SIZE-1);
+    iy &= (NOISE_PERM_SIZE-1);
+    iz &= (NOISE_PERM_SIZE-1);
+    let w000 = Grad(ix,   iy,   iz,   dx,     dy,     dz);
+    let w100 = Grad(ix+1, iy,   iz,   dx-1.f, dy,     dz);
+    let w010 = Grad(ix,   iy+1, iz,   dx,     dy-1.f, dz);
+    let w110 = Grad(ix+1, iy+1, iz,   dx-1.f, dy-1.f, dz);
+    let w001 = Grad(ix,   iy,   iz+1, dx,     dy,     dz-1.f);
+    let w101 = Grad(ix+1, iy,   iz+1, dx-1.f, dy,     dz-1.f);
+    let w011 = Grad(ix,   iy+1, iz+1, dx,     dy-1.f, dz-1.f);
+    let w111 = Grad(ix+1, iy+1, iz+1, dx-1.f, dy-1.f, dz-1.f);
+
+    // Compute trilinear interpolation of weights
+    let wx = NoiseWeight(dx);
+    let wy = NoiseWeight(dy);
+    let wz = NoiseWeight(dz);
+    let x00 = lerp(w000, w100, wx);
+    let x10 = lerp(w010, w110, wx);
+    let x01 = lerp(w001, w101, wx);
+    let x11 = lerp(w011, w111, wx);
+    let y0 = lerp(x00, x10, wy);
+    let y1 = lerp(x01, x11, wy);
+    lerp(y0, y1, wz)
+}
+
+fn Turbulence(x: f32, y: f32, z: f32, octaves: i32) -> f32 {
+    let omega = 0.6f;
+
+    let mut sum = 0.f;
+    let mut lambda = 1.f;
+    let mut o = 1.f;
+
+    for i in range(0, octaves) {
+        sum += math.fabsf(o * Noise(lambda * x, lambda * y, lambda * z));
+        lambda *= 1.99f;
+        o *= omega;
+    }
+
+    sum * 0.5f
+}
+
+extern
+fn noise_impala(x0: f32, y0: f32, x1: f32, y1: f32, width: i32, height: i32, output: &mut [f32]) -> () {
+    let dx = (x1 - x0) / (width  as f32);
+    let dy = (y1 - y0) / (height as f32);
+
+    for j in range(0, height) {
+        let vector_length = 8;
+        for i in range_step(0, width, vector_length) {
+            for programIndex in vectorize(8) {
+                let x = x0 + ((i + programIndex) as f32) * dx;
+                let y = y0 + (j as f32) * dy;
+
+                let index = (j * width + i + programIndex);
+                output(index) = Turbulence(x, y, 0.6f, 8);
+            }
+        }
+    }
+}

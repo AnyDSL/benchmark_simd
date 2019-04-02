@@ -46,8 +46,8 @@
 #include <string.h>
 using namespace ispc;
 
-extern void noise_serial(float x0, float y0, float x1, float y1,
-                         int width, int height, float output[]);
+extern void noise_serial(float x0, float y0, float x1, float y1, int width, int height, float output[]);
+extern "C" void noise_impala(float x0, float y0, float x1, float y1, int width, int height, float output[]);
 
 /* Write a PPM image file with the image */
 static void
@@ -111,6 +111,22 @@ int main(int argc, char *argv[]) {
         buf[i] = 0;
 
     //
+    // And run the impala implementation 3 times, again reporting the
+    // minimum time.
+    //
+    double minImpala = 1e30;
+    for (unsigned int i = 0; i < test_iterations[1]; ++i) {
+        reset_and_start_timer();
+        noise_impala(x0, y0, x1, y1, width, height, buf);
+        double dt = get_elapsed_mcycles();
+        printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
+        minImpala = std::min(minImpala, dt);
+    }
+
+    printf("[noise impala]:\t\t\t[%.3f] million cycles\n", minImpala);
+    writePPM(buf, width, height, "noise-impala.ppm");
+
+    //
     // And run the serial implementation 3 times, again reporting the
     // minimum time.
     //
@@ -126,7 +142,7 @@ int main(int argc, char *argv[]) {
     printf("[noise serial]:\t\t\t[%.3f] million cycles\n", minSerial);
     writePPM(buf, width, height, "noise-serial.ppm");
 
-    printf("\t\t\t\t(%.2fx speedup from ISPC)\n", minSerial/minISPC);
+    //printf("\t\t\t\t(%.2fx speedup from ISPC)\n", minSerial/minISPC);
 
     return 0;
 }

@@ -67,8 +67,6 @@ fn IntersectP(ray: Ray, pMin: Vec3, pMax: Vec3, hit0: &mut f32, hit1: &mut f32) 
     }
 }
 
-fn clamp(i: int, a: int, b: int) -> int { math.min(math.max(i, a), b) }
-
 fn D(mut x: int, mut y: int, mut z: int, nVoxels: &[int * 3], density: &[f32]) -> f32 {
     x = clamp(x, 0, nVoxels(0)-1);
     y = clamp(y, 0, nVoxels(1)-1);
