@@ -1,0 +1,238 @@
+static math = cpu_intrinsics;
+
+struct Ray {
+    org: Vec3,
+    dir: Vec3,
+}
+
+fn generateRay(raster2camera: &[[f32 * 4] * 4], camera2world: &[[f32 * 4] * 4], x: f32, y: f32) -> Ray {
+    // transform raster coordinate (x, y, 0) to camera space
+    let mut camx = raster2camera(0)(0) * x + raster2camera(0)(1) * y + raster2camera(0)(3);
+    let mut camy = raster2camera(1)(0) * x + raster2camera(1)(1) * y + raster2camera(1)(3);
+    let mut camz = raster2camera(2)(3);
+    let camw = raster2camera(3)(3);
+    camx /= camw;
+    camy /= camw;
+    camz /= camw;
+
+    let org = make_vec3(camera2world(0)(3) / camera2world(3)(3),
+                        camera2world(1)(3) / camera2world(3)(3),
+                        camera2world(2)(3) / camera2world(3)(3));
+    let dir = make_vec3(camera2world(0)(0) * camx + camera2world(0)(1) * camy + camera2world(0)(2) * camz,
+                        camera2world(1)(0) * camx + camera2world(1)(1) * camy + camera2world(1)(2) * camz,
+                        camera2world(2)(0) * camx + camera2world(2)(1) * camy + camera2world(2)(2) * camz);
+    Ray{org: org, dir: dir}
+}
+
+fn Inside(p: Vec3, pMin: Vec3, pMax: Vec3) -> bool {
+    p.x >= pMin.x && p.x <= pMax.x && p.y >= pMin.y && p.y <= pMax.y && p.z >= pMin.z && p.z <= pMax.z
+}
+
+fn IntersectP(ray: Ray, pMin: Vec3, pMax: Vec3, hit0: &mut f32, hit1: &mut f32) -> bool {
+    let mut t0 = -1e30f;
+    let mut t1 = 1e30f;
+
+    let mut tNear = vec3_div(vec3_sub(pMin, ray.org), ray.dir);
+    let mut tFar  = vec3_div(vec3_sub(pMax, ray.org), ray.dir);
+    if (tNear.x > tFar.x) {
+        let tmp = tNear.x;
+        tNear.x = tFar.x;
+        tFar.x = tmp;
+    }
+    t0 = math.fmaxf(tNear.x, t0);
+    t1 = math.fminf(tFar.x, t1);
+
+    if (tNear.y > tFar.y) {
+        let tmp = tNear.y;
+        tNear.y = tFar.y;
+        tFar.y = tmp;
+    }
+    t0 = math.fmaxf(tNear.y, t0);
+    t1 = math.fminf(tFar.y, t1);
+
+    if (tNear.z > tFar.z) {
+        let tmp = tNear.z;
+        tNear.z = tFar.z;
+        tFar.z = tmp;
+    }
+    t0 = math.fmaxf(tNear.z, t0);
+    t1 = math.fminf(tFar.z, t1);
+
+    if (t0 <= t1) {
+        *hit0 = t0;
+        *hit1 = t1;
+        true
+    } else {
+        false
+    }
+}
+
+fn clamp(i: int, a: int, b: int) -> int { math.min(math.max(i, a), b) }
+
+fn D(mut x: int, mut y: int, mut z: int, nVoxels: &[int * 3], density: &[f32]) -> f32 {
+    x = clamp(x, 0, nVoxels(0)-1);
+    y = clamp(y, 0, nVoxels(1)-1);
+    z = clamp(z, 0, nVoxels(2)-1);
+    density(z*nVoxels(0)*nVoxels(1) + y*nVoxels(0) + x)
+}
+
+fn Offset(p: Vec3, pMin: Vec3, pMax: Vec3) -> Vec3 { vec3_div(vec3_sub(p, pMin), vec3_sub(pMax, pMin)) }
+
+fn Density(Pobj: Vec3, pMin: Vec3, pMax: Vec3, density: &[f32], nVoxels: &[int * 3]) -> f32 {
+    if !Inside(Pobj, pMin, pMax) {
+        0.f
+    } else {
+        // Compute voxel coordinates and offsets for _Pobj_
+        let mut vox = Offset(Pobj, pMin, pMax);
+        vox.x = vox.x * (nVoxels(0) as f32) - .5f;
+        vox.y = vox.y * (nVoxels(1) as f32) - .5f;
+        vox.z = vox.z * (nVoxels(2) as f32) - .5f;
+        let dx = vox.x - vox.x;
+        let dy = vox.y - vox.y;
+        let dz = vox.z - vox.z;
+
+        // Trilinearly interpolate density values to compute local density
+        let vx = (vox.x as int);
+        let vy = (vox.y as int);
+        let vz = (vox.z as int);
+        let d00 = lerp(dx, D(vx, vy,   vz,   nVoxels, density), D(vx+1, vy,   vz,   nVoxels, density));
+        let d10 = lerp(dx, D(vx, vy+1, vz,   nVoxels, density), D(vx+1, vy+1, vz,   nVoxels, density));
+        let d01 = lerp(dx, D(vx, vy,   vz+1, nVoxels, density), D(vx+1, vy,   vz+1, nVoxels, density));
+        let d11 = lerp(dx, D(vx, vy+1, vz+1, nVoxels, density), D(vx+1, vy+1, vz+1, nVoxels, density));
+        let d0 = lerp(dy, d00, d10);
+        let d1 = lerp(dy, d01, d11);
+        lerp(dz, d0, d1)
+    }
+}
+
+// Returns the transmittance between two points p0 and p1, in a volume
+// with extent (pMin,pMax) with transmittance coefficient sigma_t,
+// defined by nVoxels(3) voxels in each dimension in the given density
+// array.
+fn transmittance(p0: Vec3, p1: Vec3, pMin: Vec3, pMax: Vec3, sigma_t: f32, density: &[f32], nVoxels: &[int * 3]) -> f32 {
+    let mut rayT0: f32;
+    let mut rayT1: f32;
+    let ray = Ray{org: p1, dir: vec3_sub(p0, p1)};
+
+    // Find the parametric t range along the ray that is inside the volume.
+    if (!IntersectP(ray, pMin, pMax, &mut rayT0, &mut rayT1)) {
+        1.f
+    } else {
+        rayT0 = math.fmaxf(rayT0, 0.f);
+
+        // Accumulate beam transmittance in tau
+        let mut tau = 0.f;
+        let rayLength = math.sqrtf(vec3_dot(ray.dir, ray.dir));
+        let stepDist = 0.2f;
+        let stepT = stepDist / rayLength;
+
+        let mut t = rayT0;
+        let mut pos = vec3_add(ray.org, vec3_mulf(ray.dir, rayT0));
+        let dirStep = vec3_mulf(ray.dir, stepT);
+        while (t < rayT1) {
+            tau += stepDist * sigma_t * Density(pos, pMin, pMax, density, nVoxels);
+            pos = vec3_add(pos, dirStep);
+            t += stepT;
+        }
+
+        math.expf(-tau)
+    }
+}
+
+fn distanceSquared(a: Vec3, b: Vec3) -> f32 {
+    let d = vec3_sub(a, b);
+    d.x*d.x + d.y*d.y + d.z*d.z
+}
+
+fn raymarch(density: &[f32], nVoxels: &[int * 3], ray: Ray) -> f32 {
+    let mut rayT0: f32;
+    let mut rayT1: f32;
+    let pMin     = make_vec3( 0.3f, -0.2f, 0.3f);
+    let pMax     = make_vec3( 1.8f,  2.3f, 1.8f);
+    let lightPos = make_vec3(-1.0f,  4.0f, 1.5f);
+
+    // cif
+    if (!IntersectP(ray, pMin, pMax, &mut rayT0, &mut rayT1)) {
+        0.f
+    } else {
+        rayT0 = math.fmaxf(rayT0, 0.f);
+
+        // Parameters that define the volume scattering characteristics and
+        // sampling rate for raymarching
+        let Le = .25f;            // Emission coefficient
+        let sigma_a = 10f;        // Absorption coefficient
+        let sigma_s = 10f;        // Scattering coefficient
+        let stepDist = 0.025f;    // Ray step amount
+        let lightIntensity = 40f; // Light source intensity
+
+        let mut tau = 0.f;  // accumulated beam transmittance
+        let mut L = 0.f;      // radiance along the ray
+        let rayLength = math.sqrtf(vec3_dot(ray.dir, ray.dir));
+        let stepT = stepDist / rayLength;
+
+        let mut t = rayT0;
+        let mut pos = vec3_add(ray.org, vec3_mulf(ray.dir, rayT0));
+        let dirStep = vec3_mulf(ray.dir, stepT);
+        // cwhile
+        //let mut n = 0;
+        while (t < rayT1) {
+            let d = Density(pos, pMin, pMax, density, nVoxels);
+
+            // terminate once attenuation is high
+            let atten = math.expf(-tau);
+            if (atten < .005f) { break() }
+            //if (n == 100) { break() }
+
+            // direct lighting
+            let Li = lightIntensity / distanceSquared(lightPos, pos) *
+                transmittance(lightPos, pos, pMin, pMax, sigma_a + sigma_s, density, nVoxels);
+            L += stepDist * atten * d * sigma_s * (Li + Le);
+
+            // update beam transmittance
+            tau += stepDist * (sigma_a + sigma_s) * d;
+
+            pos = vec3_add(pos, dirStep);
+            t += stepT;
+        }
+
+        // Gamma correction
+        math.powf(L, 1.f / 2.2f)
+    }
+}
+
+// Utility routine used by both the task-based and the single-core entrypoints.
+// Renders a tile of the image, covering [x0,x0) * [y0, y1), storing the
+// result into the image[] array.
+fn volume_tile(x0: int, y0: int, x1: int, y1: int, density: &[f32], nVoxels: &[int * 3], raster2camera: &[[f32 * 4] * 4], camera2world: &[[f32 * 4] * 4], width: int, height: int, image: &mut [f32]) -> () {
+    // Work on 4x4=16 pixel big tiles of the image.  This function thus
+    // implicitly assumes that both (x1-x0) and (y1-y0) are evenly divisble
+    // by 4.
+    for y in range_step(y0, y1, 4) {
+        for x in range_step(x0, x1, 4) {
+            // ispc foreach
+            for o in range(0, 16) {
+                // These two arrays encode the mapping from [0,15] to
+                // offsets within the 4x4 pixel block so that we render
+                // each pixel inside the block
+                let xoffsets = [0, 1, 0, 1, 2, 3, 2, 3, 0, 1, 0, 1, 2, 3, 2, 3];
+                let yoffsets = [0, 0, 1, 1, 0, 0, 1, 1, 2, 2, 3, 3, 2, 2, 3, 3];
+
+                // Figure out the pixel to render for this program instance
+                let xo = x + xoffsets(o);
+                let yo = y + yoffsets(o);
+
+                // Use viewing parameters to compute the corresponding ray for the pixel
+                let ray = generateRay(raster2camera, camera2world, xo as f32, yo as f32);
+
+                // And raymarch through the volume to compute the pixel's value
+                let offset = yo * width + xo;
+                image(offset) = raymarch(density, nVoxels, ray);
+            }
+        }
+    }
+}
+
+extern
+fn volume_impala(density: &[f32], nVoxels: &[int * 3], raster2camera: &[[f32 * 4] * 4], camera2world: &[[f32 * 4] * 4], width: i32, height: i32, image: &mut [f32]) -> () {
+    volume_tile(0, 0, width, height, density, nVoxels, raster2camera, camera2world, width, height,  image);
+}
