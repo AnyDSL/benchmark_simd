@@ -38,6 +38,14 @@ set (TARGET_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/volume.cpp
                     ${CMAKE_CURRENT_SOURCE_DIR}/volume_serial.cpp)
 set (ISPC_IA_TARGETS "sse2-i32x4,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16" CACHE STRING "ISPC IA targets")
 set (ISPC_ARM_TARGETS "neon" CACHE STRING "ISPC ARM targets")
+set(CLANG_FLAGS -march=native -O3)
+set(IMPALA_FLAGS --log-level info)
+anydsl_runtime_wrap(VOLUME_ANYDSL
+    NAME "volume_anydsl"
+    CLANG_FLAGS ${CLANG_FLAGS}
+    IMPALA_FLAGS ${IMPALA_FLAGS}
+    FILES ../util.impala volume.impala)
+add_library(volume_anydsl SHARED ${VOLUME_ANYDSL})
 set (DATA_FILES ${CMAKE_CURRENT_SOURCE_DIR}/camera.dat
                 ${CMAKE_CURRENT_SOURCE_DIR}/density_highres.vol
                 ${CMAKE_CURRENT_SOURCE_DIR}/density_lowres.vol)
@@ -46,6 +54,7 @@ add_ispc_example(NAME "volume_rendering"
               ISPC_ARM_TARGETS ${ISPC_ARM_TARGETS}
               ISPC_SRC_NAME ${ISPC_SRC_NAME}
               TARGET_SOURCES ${TARGET_SOURCES}
+              LIBRARIES volume_anydsl
               USE_COMMON_SETTINGS
               DATA_FILES ${DATA_FILES}
               )

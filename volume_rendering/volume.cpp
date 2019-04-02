@@ -45,10 +45,8 @@
 #include "volume_ispc.h"
 using namespace ispc;
 
-extern void volume_serial(float density[], int nVoxels[3],
-                          const float raster2camera[4][4],
-                          const float camera2world[4][4],
-                          int width, int height, float image[]);
+extern void volume_serial(float density[], int nVoxels[3], const float raster2camera[4][4], const float camera2world[4][4], int width, int height, float image[]);
+extern "C" void volume_impala(float density[], int nVoxels[3], const float raster2camera[4][4], const float camera2world[4][4], int width, int height, float image[]);
 
 /* Write a PPM image file with the image */
 static void
@@ -165,8 +163,7 @@ int main(int argc, char *argv[]) {
     double minISPC = 1e30;
     for (unsigned int i = 0; i < test_iterations[0]; ++i) {
         reset_and_start_timer();
-        volume_ispc(density, n, raster2camera, camera2world,
-                    width, height, image);
+        volume_ispc(density, n, raster2camera, camera2world, width, height, image);
         double dt = get_elapsed_mcycles();
         printf("@time of ISPC run:\t\t\t[%.3f] million cycles\n", dt);
         minISPC = std::min(minISPC, dt);
@@ -179,22 +176,18 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < width * height; ++i)
         image[i] = 0.;
 
-    //
-    // Compute the image using the ispc implementation that also uses
-    // tasks; report the minimum time of three runs.
-    //
-    double minISPCtasks = 1e30;
+    // anydsl
+    double minImpala = 1e30;
     for (unsigned int i = 0; i < test_iterations[1]; ++i) {
         reset_and_start_timer();
-        volume_ispc_tasks(density, n, raster2camera, camera2world,
-                          width, height, image);
+        volume_impala(density, n, raster2camera, camera2world, width, height, image);
         double dt = get_elapsed_mcycles();
-        printf("@time of ISPC + TASKS run:\t\t\t[%.3f] million cycles\n", dt);
-        minISPCtasks = std::min(minISPCtasks, dt);
+        printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
+        minImpala = std::min(minImpala, dt);
     }
 
-    printf("[volume ispc + tasks]:\t\t[%.3f] million cycles\n", minISPCtasks);
-    writePPM(image, width, height, "volume-ispc-tasks.ppm");
+    printf("[volume impala]:\t\t[%.3f] million cycles\n", minImpala);
+    writePPM(image, width, height, "volume-impala.ppm");
 
     // Clear out the buffer
     for (int i = 0; i < width * height; ++i)
@@ -217,8 +210,8 @@ int main(int argc, char *argv[]) {
     printf("[volume serial]:\t\t[%.3f] million cycles\n", minSerial);
     writePPM(image, width, height, "volume-serial.ppm");
 
-    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
-           minSerial/minISPC, minSerial / minISPCtasks);
+    //printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
+           //minSerial/minISPC, minSerial / minISPCtasks);
 
     return 0;
 }
