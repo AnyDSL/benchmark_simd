@@ -1,0 +1,51 @@
+fn stencil_step(x0: i32, x1: i32,
+                y0: i32, y1: i32,
+                z0: i32, z1: i32,
+                Nx: i32, Ny: i32, Nz: i32,
+                coef: &[f32 * 4], vsq: &[f32],
+                Ain: &[f32], Aout: &mut [f32]) -> () {
+    let Nxy = Nx * Ny;
+
+    //foreach (z = z0 ... z1, y = y0 ... y1, x = x0 ... x1) {
+    for z in range(z0, z1) {
+        for y in range(y0, y1) {
+            for x in range(x0, x1) {
+                let index = (z * Nxy) + (y * Nx) + x;
+
+                let A_cur =  @|x, y, z| Ain (index + x + y * Nx + z * Nxy);
+                let A_next = @|x, y, z| Aout(index + x + y * Nx + z * Nxy);
+                let A_next_set = @|x, y, z, val| Aout(index + x + y * Nx + z * Nxy) = val;
+                let div = coef(0) * A_cur(0, 0, 0) +
+                    coef(1) * (A_cur(+1, 0, 0) + A_cur(-1, 0, 0) +
+                            A_cur(0, +1, 0) + A_cur(0, -1, 0) +
+                            A_cur(0, 0, +1) + A_cur(0, 0, -1)) +
+                    coef(2) * (A_cur(+2, 0, 0) + A_cur(-2, 0, 0) +
+                            A_cur(0, +2, 0) + A_cur(0, -2, 0) +
+                            A_cur(0, 0, +2) + A_cur(0, 0, -2)) +
+                    coef(3) * (A_cur(+3, 0, 0) + A_cur(-3, 0, 0) +
+                            A_cur(0, +3, 0) + A_cur(0, -3, 0) +
+                            A_cur(0, 0, +3) + A_cur(0, 0, -3));
+
+                A_next_set(0, 0, 0, 2.f * A_cur(0, 0, 0) - A_next(0, 0, 0) + vsq(index) * div);
+            }
+        }
+    }
+}
+
+extern
+fn loop_stencil_impala(t0: i32, t1: i32,
+                       x0: i32, x1: i32,
+                       y0: i32, y1: i32,
+                       z0: i32, z1: i32,
+                       Nx: i32, Ny: i32, Nz: i32,
+                       coef: &[f32 * 4], vsq: &[f32],
+                       Aeven: &mut [f32], Aodd: &mut [f32]) -> ()
+{
+    for t in range(t0, t1) {
+        if (t & 1) == 0 {
+            stencil_step(x0, x1, y0, y1, z0, z1, Nx, Ny, Nz, coef, vsq, Aeven, Aodd);
+        } else {
+            stencil_step(x0, x1, y0, y1, z0, z1, Nx, Ny, Nz, coef, vsq, Aodd, Aeven);
+        }
+    }
+}

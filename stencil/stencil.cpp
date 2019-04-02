@@ -55,6 +55,12 @@ extern void loop_stencil_serial(int t0, int t1, int x0, int x1,
                                 const float vsq[],
                                 float Aeven[], float Aodd[]);
 
+extern "C" void loop_stencil_impala(int t0, int t1, int x0, int x1,
+                                    int y0, int y1, int z0, int z1,
+                                    int Nx, int Ny, int Nz,
+                                    const float coef[5],
+                                    const float vsq[],
+                                    float Aeven[], float Aodd[]);
 
 void InitData(int Nx, int Ny, int Nz, float *A[2], float *vsq) {
     int offset = 0;
@@ -120,18 +126,18 @@ int main(int argc, char *argv[]) {
     // Compute the image using the ispc implementation with tasks; report
     // the minimum time of three runs.
     //
-    double minTimeISPCTasks = 1e30;
+    double minTimeImpala = 1e30;
     for (unsigned int i = 0; i < test_iterations[1]; ++i) {
         reset_and_start_timer();
-        loop_stencil_ispc_tasks(0, 6, width, Nx - width, width, Ny - width,
+        loop_stencil_impala(0, 6, width, Nx - width, width, Ny - width,
                                 width, Nz - width, Nx, Ny, Nz, coeff, vsq,
                                 Aispc[0], Aispc[1]);
         double dt = get_elapsed_mcycles();
-        printf("@time of ISPC + TASKS run:\t\t\t[%.3f] million cycles\n", dt);
-        minTimeISPCTasks = std::min(minTimeISPCTasks, dt);
+        printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
+        minTimeImpala = std::min(minTimeImpala, dt);
     }
 
-    printf("[stencil ispc + tasks]:\t\t[%.3f] million cycles\n", minTimeISPCTasks);
+    printf("[stencil impala]:\t\t[%.3f] million cycles\n", minTimeImpala);
 
     InitData(Nx, Ny, Nz, Aserial, vsq);
 
@@ -152,8 +158,8 @@ int main(int argc, char *argv[]) {
 
     printf("[stencil serial]:\t\t[%.3f] million cycles\n", minTimeSerial);
 
-    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
-           minTimeSerial / minTimeISPC, minTimeSerial / minTimeISPCTasks);
+    //printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
+           //minTimeSerial / minTimeISPC, minTimeSerial / minTimeISPCTasks);
 
     // Check for agreement
     int offset = 0;
