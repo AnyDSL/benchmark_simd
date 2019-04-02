@@ -7,6 +7,7 @@ fn @lerp2(a: f32, b: f32, c: f32, k1: f32, k2: f32) -> f32 {
 }
 
 fn floatbits(bits: u32) -> f32 { bitcast(bits) }
+fn intbits(f: f32) -> u32 { bitcast(f) }
 
 /*
  * Vec2, Vec3, Vec4
@@ -162,6 +163,86 @@ fn seed_rng(state: &mut RNGState, seed: u32) -> () {
  */
 
 fn @floor(f: f32) -> f32 { cpu_intrinsics.floorf(f) }
+
+/*
+ * math: exp, pow
+ */
+
+fn ldexp(x: f32, mut n: u32) -> f32 {
+    let mut ex = 0x7F800000u;
+    let mut ix = intbits(x);
+    ex &= ix;              // extract old exponent;
+    ix = ix & !0x7F800000u;  // clear exponent
+    n = (n << 23u) + ex;
+    ix |= n; // insert new exponent
+    floatbits(ix)
+}
+
+fn exp(mut x_full: f32) -> f32 {
+    let fast = true;
+    if fast {
+        let mut z = floor(1.44269504088896341f * x_full + 0.5f);
+        x_full -= z * 0.693359375f;
+        x_full -= z * -2.12194440e-4f;
+        let n = z as int;
+
+        z = x_full * x_full;
+        z = (((((1.9875691500E-4f  * x_full + 1.3981999507E-3f) * x_full +
+                8.3334519073E-3f) * x_full + 4.1665795894E-2f) * x_full +
+                1.6666665459E-1f) * x_full + 5.0000001201E-1f) * z + x_full + 1.f;
+        x_full = ldexp(z, n as u32);
+        x_full
+    } else {
+        let ln2_part1 = 0.6931457519f;
+        let ln2_part2 = 1.4286067653e-6f;
+        let one_over_ln2 = 1.44269502162933349609375f;
+
+        let scaled = x_full * one_over_ln2;
+        let k_real = floor(scaled);
+        let k = k_real as i32;
+
+        // Reduced range version of x
+        let mut x = x_full - k_real * ln2_part1;
+        x -= k_real * ln2_part2;
+
+        // These coefficients are for e^x in [0, ln(2)]
+        let one = 1.f;
+        let c2 = 0.4999999105930328369140625f;
+        let c3 = 0.166668415069580078125f;
+        let c4 = 4.16539050638675689697265625e-2f;
+        let c5 = 8.378830738365650177001953125e-3f;
+        let c6 = 1.304379315115511417388916015625e-3f;
+        let c7 = 2.7555381529964506626129150390625e-4f;
+
+        let mut result = x * c7 + c6;
+        result = x * result + c5;
+        result = x * result + c4;
+        result = x * result + c3;
+        result = x * result + c2;
+        result = x * result + one;
+        result = x * result + one;
+
+        // Compute 2^k (should differ for uniform float and double, but I'll avoid
+        // it for now and just do uniform floats)
+        let fpbias = 127;
+        let mut biased_n = k + fpbias;
+        let overflow = k > fpbias;
+        // Minimum exponent is -126, so if k is <= -127 (k + 127 <= 0)
+        // we've got underflow. -127 * ln(2) -> -88.02. So the most
+        // negative uniform float input that doesn't result in zero is like -88.
+        let underflow = (biased_n <= 0);
+        let InfBits = 0x7f800000;
+        biased_n <<= 23;
+        // Reuniform interpret this thing as uniform float
+        let two_to_the_n = floatbits(biased_n as u32);
+        // Handle both doubles and uniform floats (hopefully eliding the copy for uniform float)
+        let elemtype_2n = two_to_the_n;
+        result *= elemtype_2n;
+        result = select(overflow, floatbits(InfBits as u32), result);
+        result = select(underflow, 0.f, result);
+        result
+    }
+}
 
 /*
  * math: trigonometry
@@ -375,177 +456,3 @@ fn tan(x_full: f32) -> f32 {
 
     if x_lt_0 { -z } else { z }
 }
-
-/*
-__declspec(safe)
-static inline f32 atan(f32 x_full) {
-    if (__have_native_trigonometry)
-    {
-      return __atan_varying_f32(x_full);
-    }
-    else if (__math_lib == __math_lib_svml) {
-        return __svml_atanf(x_full);
-    }
-    else if (__math_lib == __math_lib_system) {
-        f32 ret;
-        foreach_active (i) {
-            uniform f32 r = __stdlib_atanf(extract(x_full, i));
-            ret = insert(ret, i, r);
-        }
-        return ret;
-    }
-    else if (__math_lib == __math_lib_ispc ||
-             __math_lib == __math_lib_ispc_fast) {
-        const f32 pi_over_two_vec = 1.57079637050628662109375;
-        // atan(-x) = -atan(x) (so flip from negative to positive first)
-        // if x > 1 -> atan(x) = Pi/2 - atan(1/x)
-        bool x_neg = x_full < 0;
-        f32 x_flipped = x_neg ? -x_full : x_full;
-
-        bool x_gt_1 = x_flipped > 1.;
-        f32 x = x_gt_1 ? 1./x_flipped : x_flipped;
-
-        // These coefficients approximate atan(x)/x
-        const f32 atan_c0 = 0.99999988079071044921875;
-        const f32 atan_c2 = -0.3333191573619842529296875;
-        const f32 atan_c4 = 0.199689209461212158203125;
-        const f32 atan_c6 = -0.14015688002109527587890625;
-        const f32 atan_c8 = 9.905083477497100830078125e-2;
-        const f32 atan_c10 = -5.93664981424808502197265625e-2;
-        const f32 atan_c12 = 2.417283318936824798583984375e-2;
-        const f32 atan_c14 = -4.6721356920897960662841796875e-3;
-
-        f32 x2 = x * x;
-        f32 result = x2 * atan_c14 + atan_c12;
-        result = x2 * result + atan_c10;
-        result = x2 * result + atan_c8;
-        result = x2 * result + atan_c6;
-        result = x2 * result + atan_c4;
-        result = x2 * result + atan_c2;
-        result = x2 * result + atan_c0;
-        result *= x;
-
-        result = x_gt_1 ? pi_over_two_vec - result : result;
-        result = x_neg ? -result : result;
-        return result;
-    }
-}
-
-
-__declspec(safe)
-static inline uniform f32 atan(uniform f32 x_full) {
-    if (__have_native_trigonometry)
-    {
-      return __atan_uniform_f32(x_full);
-    }
-    else if (__math_lib == __math_lib_system ||
-        __math_lib == __math_lib_svml) {
-        return __stdlib_atanf(x_full);
-    }
-    else if (__math_lib == __math_lib_ispc ||
-             __math_lib == __math_lib_ispc_fast) {
-        const uniform f32 pi_over_two_vec = 1.57079637050628662109375;
-        // atan(-x) = -atan(x) (so flip from negative to positive first)
-        // if x > 1 -> atan(x) = Pi/2 - atan(1/x)
-        uniform bool x_neg = x_full < 0;
-        uniform f32 x_flipped = x_neg ? -x_full : x_full;
-
-        uniform bool x_gt_1 = x_flipped > 1.;
-        uniform f32 x = x_gt_1 ? 1./x_flipped : x_flipped;
-
-        // These coefficients approximate atan(x)/x
-        const uniform f32 atan_c0 = 0.99999988079071044921875;
-        const uniform f32 atan_c2 = -0.3333191573619842529296875;
-        const uniform f32 atan_c4 = 0.199689209461212158203125;
-        const uniform f32 atan_c6 = -0.14015688002109527587890625;
-        const uniform f32 atan_c8 = 9.905083477497100830078125e-2;
-        const uniform f32 atan_c10 = -5.93664981424808502197265625e-2;
-        const uniform f32 atan_c12 = 2.417283318936824798583984375e-2;
-        const uniform f32 atan_c14 = -4.6721356920897960662841796875e-3;
-
-        uniform f32 x2 = x * x;
-        uniform f32 result = x2 * atan_c14 + atan_c12;
-        result = x2 * result + atan_c10;
-        result = x2 * result + atan_c8;
-        result = x2 * result + atan_c6;
-        result = x2 * result + atan_c4;
-        result = x2 * result + atan_c2;
-        result = x2 * result + atan_c0;
-        result *= x;
-
-        result = x_gt_1 ? pi_over_two_vec - result : result;
-        result = x_neg ? -result : result;
-        return result;
-    }
-}
-
-
-__declspec(safe)
-static inline f32 atan2(f32 y, f32 x) {
-    if (__have_native_trigonometry)
-    {
-      return __atan2_varying_f32(y,x);
-    }
-    else if (__math_lib == __math_lib_svml) {
-        return __svml_atan2f(y, x);
-    }
-    else if (__math_lib == __math_lib_system) {
-        f32 ret;
-        foreach_active (i) {
-            uniform f32 r = __stdlib_atan2f(extract(y, i), extract(x, i));
-            ret = insert(ret, i, r);
-        }
-        return ret;
-    }
-    else if (__math_lib == __math_lib_ispc ||
-             __math_lib == __math_lib_ispc_fast) {
-        const f32 pi_vec = 3.1415926536;
-        const f32 pi_over_two_vec = 1.5707963267;
-        // atan2(y, x) =
-        //
-        // atan2(y > 0, x = +-0) ->  Pi/2
-        // atan2(y < 0, x = +-0) -> -Pi/2
-        // atan2(y = +-0, x < +0) -> +-Pi
-        // atan2(y = +-0, x >= +0) -> +-0
-        //
-        // atan2(y >= 0, x < 0) ->  Pi + atan(y/x)
-        // atan2(y <  0, x < 0) -> -Pi + atan(y/x)
-        // atan2(y, x > 0) -> atan(y/x)
-        //
-        // and then a bunch of code for dealing with infinities.
-        f32 y_over_x = y/x;
-        f32 atan_arg = atan(y_over_x);
-        bool x_lt_0 = x < 0;
-        bool y_lt_0 = y < 0;
-        f32 offset = x_lt_0 ? (y_lt_0 ? -pi_vec : pi_vec) : 0;
-        return offset + atan_arg;
-    }
-}
-
-
-__declspec(safe)
-static inline uniform f32 atan2(uniform f32 y, uniform f32 x) {
-    if (__have_native_trigonometry)
-    {
-      return __atan2_uniform_f32(y,x);
-    }
-    else if (__math_lib == __math_lib_system ||
-        __math_lib == __math_lib_svml) {
-        return __stdlib_atan2f(y, x);
-    }
-    else if (__math_lib == __math_lib_ispc ||
-             __math_lib == __math_lib_ispc_fast) {
-        const uniform f32 pi_vec = 3.1415927410125732421875;
-        const uniform f32 pi_over_two_vec = 1.57079637050628662109375;
-
-        uniform f32 y_over_x = y/x;
-        uniform f32 atan_arg = atan(y_over_x);
-        uniform bool x_lt_0 = x < 0;
-        uniform bool y_lt_0 = y < 0;
-        uniform f32 offset = x_lt_0 ? (y_lt_0 ? -pi_vec : pi_vec) : 0;
-        return offset + atan_arg;
-    }
-}
-
-
-*/
