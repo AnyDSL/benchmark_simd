@@ -87,21 +87,21 @@ fn Density(Pobj: Vec3, pMin: Vec3, pMax: Vec3, density: &[f32], nVoxels: &[int *
         vox.x = vox.x * (nVoxels(0) as f32) - .5f;
         vox.y = vox.y * (nVoxels(1) as f32) - .5f;
         vox.z = vox.z * (nVoxels(2) as f32) - .5f;
-        let dx = vox.x - vox.x;
-        let dy = vox.y - vox.y;
-        let dz = vox.z - vox.z;
-
-        // Trilinearly interpolate density values to compute local density
         let vx = (vox.x as int);
         let vy = (vox.y as int);
         let vz = (vox.z as int);
-        let d00 = lerp(dx, D(vx, vy,   vz,   nVoxels, density), D(vx+1, vy,   vz,   nVoxels, density));
-        let d10 = lerp(dx, D(vx, vy+1, vz,   nVoxels, density), D(vx+1, vy+1, vz,   nVoxels, density));
-        let d01 = lerp(dx, D(vx, vy,   vz+1, nVoxels, density), D(vx+1, vy,   vz+1, nVoxels, density));
-        let d11 = lerp(dx, D(vx, vy+1, vz+1, nVoxels, density), D(vx+1, vy+1, vz+1, nVoxels, density));
-        let d0 = lerp(dy, d00, d10);
-        let d1 = lerp(dy, d01, d11);
-        lerp(dz, d0, d1)
+        let dx = vox.x - (vx as f32);
+        let dy = vox.y - (vy as f32);
+        let dz = vox.z - (vz as f32);
+
+        // Trilinearly interpolate density values to compute local density
+        let d00 = lerp(D(vx, vy,   vz,   nVoxels, density), D(vx+1, vy,   vz,   nVoxels, density), dx);
+        let d10 = lerp(D(vx, vy+1, vz,   nVoxels, density), D(vx+1, vy+1, vz,   nVoxels, density), dx);
+        let d01 = lerp(D(vx, vy,   vz+1, nVoxels, density), D(vx+1, vy,   vz+1, nVoxels, density), dx);
+        let d11 = lerp(D(vx, vy+1, vz+1, nVoxels, density), D(vx+1, vy+1, vz+1, nVoxels, density), dx);
+        let d0 = lerp(d00, d10, dy);
+        let d1 = lerp(d01, d11, dy);
+        lerp(d0, d1, dz)
     }
 }
 
