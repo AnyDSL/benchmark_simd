@@ -181,7 +181,6 @@ fn raymarch(density: &[f32], nVoxels: &[int * 3], ray: Ray) -> f32 {
             // terminate once attenuation is high
             let atten = math.expf(-tau);
             if (atten < .005f) { break() }
-            //if (n == 100) { break() }
 
             // direct lighting
             let Li = lightIntensity / distanceSquared(lightPos, pos) *
@@ -209,24 +208,27 @@ fn volume_tile(x0: int, y0: int, x1: int, y1: int, density: &[f32], nVoxels: &[i
     // by 4.
     for y in range_step(y0, y1, 4) {
         for x in range_step(x0, x1, 4) {
-            // ispc foreach
-            for o in range(0, 16) {
-                // These two arrays encode the mapping from [0,15] to
-                // offsets within the 4x4 pixel block so that we render
-                // each pixel inside the block
-                let xoffsets = [0, 1, 0, 1, 2, 3, 2, 3, 0, 1, 0, 1, 2, 3, 2, 3];
-                let yoffsets = [0, 0, 1, 1, 0, 0, 1, 1, 2, 2, 3, 3, 2, 2, 3, 3];
+            let vector_length = 8;
+            for oo in range_step(0, 16, vector_length) {
+                for ii in vectorize(vector_length) {
+                    let o = oo + ii;
+                    // These two arrays encode the mapping from [0,15] to
+                    // offsets within the 4x4 pixel block so that we render
+                    // each pixel inside the block
+                    let xoffsets = [0, 1, 0, 1, 2, 3, 2, 3, 0, 1, 0, 1, 2, 3, 2, 3];
+                    let yoffsets = [0, 0, 1, 1, 0, 0, 1, 1, 2, 2, 3, 3, 2, 2, 3, 3];
 
-                // Figure out the pixel to render for this program instance
-                let xo = x + xoffsets(o);
-                let yo = y + yoffsets(o);
+                    // Figure out the pixel to render for this program instance
+                    let xo = x + xoffsets(o);
+                    let yo = y + yoffsets(o);
 
-                // Use viewing parameters to compute the corresponding ray for the pixel
-                let ray = generateRay(raster2camera, camera2world, xo as f32, yo as f32);
+                    // Use viewing parameters to compute the corresponding ray for the pixel
+                    let ray = generateRay(raster2camera, camera2world, xo as f32, yo as f32);
 
-                // And raymarch through the volume to compute the pixel's value
-                let offset = yo * width + xo;
-                image(offset) = raymarch(density, nVoxels, ray);
+                    // And raymarch through the volume to compute the pixel's value
+                    let offset = yo * width + xo;
+                    image(offset) = raymarch(density, nVoxels, ray);
+                }
             }
         }
     }
