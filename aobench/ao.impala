@@ -24,12 +24,19 @@ struct Ray {
     dir: Vec3,
 };
 
-fn ray_plane_intersect(isect: &mut Isect, ray: &Ray, plane: &Plane) -> () {
+fn @cif(c: bool, t: fn () -> ()) -> () {
+    if rv_any(c) {
+        if c {
+            @@t()
+        }
+    }
+}
+
+fn @ray_plane_intersect(isect: &mut Isect, ray: &Ray, plane: &Plane) -> () {
     let d = -vec3_dot(plane.p, plane.n);
     let v = vec3_dot(ray.dir, plane.n);
 
-    if math.fabsf(v) < 1.0e-17f {
-    } else {
+    if math.fabsf(v) >= 1.0e-17f {
         let t = -(vec3_dot(ray.org, plane.n) + d) / v;
 
         if t > 0.0f && t < isect.t {
@@ -41,7 +48,7 @@ fn ray_plane_intersect(isect: &mut Isect, ray: &Ray, plane: &Plane) -> () {
     }
 }
 
-fn ray_sphere_intersect(isect: &mut Isect, ray: Ray, sphere: &Sphere) -> () {
+fn @ray_sphere_intersect(isect: &mut Isect, ray: Ray, sphere: &Sphere) -> () {
     let rs = vec3_sub(ray.org, sphere.center);
 
     let B = vec3_dot(rs, ray.dir);
@@ -60,7 +67,7 @@ fn ray_sphere_intersect(isect: &mut Isect, ray: Ray, sphere: &Sphere) -> () {
     }
 }
 
-fn orthoBasis(basis: &mut [Vec3 * 3], n: Vec3) -> () {
+fn @orthoBasis(basis: &mut [Vec3 * 3], n: Vec3) -> () {
     basis(2) = n;
     basis(1).x = 0.0f; basis(1).y = 0.0f; basis(1).z = 0.0f;
 
@@ -78,7 +85,7 @@ fn orthoBasis(basis: &mut [Vec3 * 3], n: Vec3) -> () {
     basis(1) = vec3_normalize(math, vec3_cross(basis(2), basis(0)));
 }
 
-fn ambient_occlusion(isect: &Isect, plane: &Plane, spheres: &[Sphere * 3], rngstate: &mut RNGState) -> f32 {
+fn @ambient_occlusion(isect: &Isect, plane: &Plane, spheres: &[Sphere * 3], rngstate: &mut RNGState) -> f32 {
     let eps = 0.0001f;
     let mut basis: [Vec3 * 3];
     let mut occlusion = 0.0f;
@@ -96,8 +103,11 @@ fn ambient_occlusion(isect: &Isect, plane: &Plane, spheres: &[Sphere * 3], rngst
 
             let theta = math.sqrtf(frandom(rngstate));
             let phi   = 2.0f * M_PI * frandom(rngstate);
-            let x = math.cosf(phi) * theta;
-            let y = math.sinf(phi) * theta;
+            //let x = cos(phi) * theta;
+            //let y = sin(phi) * theta;
+            let (ys, xs) = sincos(phi);
+            let x = xs * theta;
+            let y = ys * theta;
             let z = math.sqrtf(1.0f - theta * theta);
 
             // local . global
@@ -127,12 +137,28 @@ fn ambient_occlusion(isect: &Isect, plane: &Plane, spheres: &[Sphere * 3], rngst
     occlusion
 }
 
-fn @foreach_tiled(x0: i32, x1: i32, xstep: i32, y0: i32, y1: i32, ulen: i32, vlen: i32, body: fn (i32, i32, i32, i32) -> ()) -> () {
-    for y in range(y0, y1) {
+fn @ilog2(i: i32) -> i32 {
+    fn @(?p & ?i) ilog2_helper(j: i32, p: i32) -> i32 {
+        if p < i {
+            ilog2_helper(j + 1, p * 2)
+        } else {
+            j
+        }
+    }
+    ilog2_helper(0, 1)
+}
+
+fn @foreach_tiled(i: i32, vec_len: i32, x0: i32, x1: i32, y0: i32, y1: i32, ulen: i32, vlen: i32, body: fn (i32, i32, i32, i32) -> ()) -> () {
+    let n = ilog2(vec_len);
+    let m = n / 2 + select(n % 2 == 0, 0, 1);
+    let xstep = 1 << m;
+    let ystep = vec_len >> m;
+    let xmask = xstep - 1;
+    for y in range_step(y0, y1, ystep) {
         for x in range_step(x0, x1, xstep) {
             for u in range(0, ulen) {
                 for v in range(0, vlen) {
-                    @@body(x, y, u, v)
+                    @@body(x + (i & xmask), y + (i >> m), u, v)
                 }
             }
         }
@@ -156,8 +182,7 @@ fn @ao_scanlines(y0: i32, y1: i32, w: i32, h: i32,  nsubsamples: i32, image: &mu
         let mut rngstate: RNGState;
         seed_rng(&mut rngstate, (y0 + i) as u32);
 
-        for x_, y, u, v in foreach_tiled(0, w, vec_len, y0, y1, nsubsamples, nsubsamples) {
-            let x = x_ + i;
+        for x, y, u, v in foreach_tiled(i, vec_len, 0, w, y0, y1, nsubsamples, nsubsamples) {
             let du = (u as f32) * invSamples;
             let dv = (v as f32) * invSamples;
 
@@ -189,9 +214,7 @@ fn @ao_scanlines(y0: i32, y1: i32, w: i32, h: i32,  nsubsamples: i32, image: &mu
 
             ray_plane_intersect(&mut isect, ray, plane);
 
-            // Note use of 'coherent' if statement; the set of rays we
-            // trace will often all hit or all miss the scene
-            if isect.hit != 0 {
+            cif(isect.hit != 0, || {
                 ret = ambient_occlusion(&mut isect, &plane, &spheres, &mut rngstate);
                 ret *= invSamples * invSamples;
 
@@ -199,7 +222,7 @@ fn @ao_scanlines(y0: i32, y1: i32, w: i32, h: i32,  nsubsamples: i32, image: &mu
                 image(offset)   += ret;
                 image(offset+1) += ret;
                 image(offset+2) += ret;
-            }
+            })
         }
     }
 }

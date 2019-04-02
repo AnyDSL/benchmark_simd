@@ -179,7 +179,7 @@ fn @floor(f: f32) -> f32 { cpu_intrinsics.floorf(f) }
  * math: trigonometry
  */
 
-fn sin(x_full: f32) -> f32 {
+fn @sin(x_full: f32) -> f32 {
     static pi_over_two_vec = 1.57079637050628662109375f;
     static two_over_pi_vec = 0.636619746685028076171875f;
     let scaled = x_full * two_over_pi_vec;
@@ -189,7 +189,7 @@ fn sin(x_full: f32) -> f32 {
     // Reduced range version of x
     let x = x_full - k_real * pi_over_two_vec;
     let k_mod4 = k & 3;
-    let sin_usecos = (k_mod4 == 1 || k_mod4 == 3);
+    let sin_usecos = (k_mod4 == 1) | (k_mod4 == 3);
     let flip_sign = (k_mod4 > 1);
 
     // These coefficients are from sollya with fpminimax(sin(x)/x, [|0, 2,
@@ -206,12 +206,12 @@ fn sin(x_full: f32) -> f32 {
     static cos_c8 = 2.47562347794882953166961669921875e-5f;
     static cos_c10 = -2.59630184018533327616751194000244140625e-7f;
 
-    let outside = if sin_usecos { 1.f     } else { x };
-    let c2      = if sin_usecos { cos_c2  } else { sin_c2 };
-    let c4      = if sin_usecos { cos_c4  } else { sin_c4 };
-    let c6      = if sin_usecos { cos_c6  } else { sin_c6 };
-    let c8      = if sin_usecos { cos_c8  } else { sin_c8 };
-    let c10     = if sin_usecos { cos_c10 } else { sin_c10 };
+    let outside = select(sin_usecos, 1.f    , x);
+    let c2      = select(sin_usecos, cos_c2 , sin_c2);
+    let c4      = select(sin_usecos, cos_c4 , sin_c4);
+    let c6      = select(sin_usecos, cos_c6 , sin_c6);
+    let c8      = select(sin_usecos, cos_c8 , sin_c8);
+    let c10     = select(sin_usecos, cos_c10, sin_c10);
 
     let x2 = x * x;
     let mut formula = x2 * c10 + c8;
@@ -221,10 +221,10 @@ fn sin(x_full: f32) -> f32 {
     formula = x2 * formula + 1.f;
     formula *= outside;
 
-    if flip_sign { -formula } else { formula }
+    select(flip_sign, -formula, formula)
 }
 
-fn cos(x_full: f32) -> f32 {
+fn @cos(x_full: f32) -> f32 {
     static pi_over_two_vec = 1.57079637050628662109375f;
     static two_over_pi_vec = 0.636619746685028076171875f;
     let scaled = x_full * two_over_pi_vec;
@@ -235,8 +235,8 @@ fn cos(x_full: f32) -> f32 {
     let x = x_full - k_real * pi_over_two_vec;
 
     let k_mod4 = k & 3;
-    let cos_usecos = (k_mod4 == 0 || k_mod4 == 2);
-    let flip_sign = (k_mod4 == 1 || k_mod4 == 2);
+    let cos_usecos = (k_mod4 == 0) | (k_mod4 == 2);
+    let flip_sign = (k_mod4 == 1) | (k_mod4 == 2);
 
     let sin_c2 = -0.16666667163372039794921875f;
     let sin_c4 = 8.333347737789154052734375e-3f;
@@ -250,7 +250,12 @@ fn cos(x_full: f32) -> f32 {
     let cos_c8 = 2.47562347794882953166961669921875e-5f;
     let cos_c10 = -2.59630184018533327616751194000244140625e-7f;
 
-    let (outside, c2, c4, c6, c8, c10) = if cos_usecos { (1.f, cos_c2, cos_c4, cos_c6, cos_c8, cos_c10) } else { (x, sin_c2, sin_c4, sin_c6, sin_c8, sin_c10) };
+    let outside = select(cos_usecos, 1.0f, x);
+    let c2      = select(cos_usecos, cos_c2,  sin_c2 );
+    let c4      = select(cos_usecos, cos_c4,  sin_c4 );
+    let c6      = select(cos_usecos, cos_c6,  sin_c6 );
+    let c8      = select(cos_usecos, cos_c8,  sin_c8 );
+    let c10     = select(cos_usecos, cos_c10, sin_c10);
 
     let x2 = x * x;
     let mut formula = x2 * c10 + c8;
@@ -260,10 +265,10 @@ fn cos(x_full: f32) -> f32 {
     formula = x2 * formula + 1.f;
     formula *= outside;
 
-    if flip_sign { -formula } else { formula }
+    select(flip_sign, -formula, formula)
 }
 
-fn sincos(x_full: f32) -> (f32, f32) {
+fn @sincos(x_full: f32) -> (f32, f32) {
     let pi_over_two_vec = 1.57079637050628662109375f;
     let two_over_pi_vec = 0.636619746685028076171875f;
     let scaled = x_full * two_over_pi_vec;
@@ -273,10 +278,10 @@ fn sincos(x_full: f32) -> (f32, f32) {
     // Reduced range version of x
     let x = x_full - k_real * pi_over_two_vec;
     let k_mod4 = k & 3;
-    let cos_usecos = (k_mod4 == 0 || k_mod4 == 2);
-    let sin_usecos = (k_mod4 == 1 || k_mod4 == 3);
+    let cos_usecos = (k_mod4 == 0) | (k_mod4 == 2);
+    let sin_usecos = (k_mod4 == 1) | (k_mod4 == 3);
     let sin_flipsign = (k_mod4 > 1);
-    let cos_flipsign = (k_mod4 == 1 || k_mod4 == 2);
+    let cos_flipsign = (k_mod4 == 1) | (k_mod4 == 2);
 
     let one_vec = 1.f;
     let sin_c2 = -0.16666667163372039794921875f;
@@ -309,11 +314,11 @@ fn sincos(x_full: f32) -> (f32, f32) {
 
     sin_formula *= x;
 
-    let mut sin_result = if sin_usecos { cos_formula } else { sin_formula };
-    let mut cos_result = if cos_usecos { cos_formula } else { sin_formula };
+    let mut sin_result = select(sin_usecos, cos_formula, sin_formula);
+    let mut cos_result = select(cos_usecos, cos_formula, sin_formula);
 
-    sin_result = if sin_flipsign { -sin_result } else { sin_result };
-    cos_result = if cos_flipsign { -cos_result } else { cos_result };
+    sin_result = select(sin_flipsign, -sin_result, sin_result);
+    cos_result = select(cos_flipsign, -cos_result, cos_result);
 
     (sin_result, cos_result)
 }
