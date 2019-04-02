@@ -1,15 +1,3 @@
-extern "C" {
-    fn rv_any(bool) -> bool;
-    fn rv_all(bool) -> bool;
-    fn rv_ballot(bool) -> i32;
-    fn rv_extract(f32, i32) -> f32;
-    fn rv_insert(f32, i32, f32) -> f32;
-    fn rv_load(&f32, i32) -> f32;
-    fn rv_store(&mut f32, i32, f32) -> ();
-    fn rv_shuffle(f32, i32) -> f32;
-    fn rv_align(&i8, i32)-> &i8;
-}
-
 fn @lerp(a: f32, b: f32, k: f32) -> f32 {
     (1.0f - k) * a + k * b
 }
