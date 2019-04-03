@@ -47,8 +47,8 @@ fn @Floor2Int(val: f32) -> i32 { floor(val) as i32 }
 fn Grad(x: i32, y: i32, z: i32, dx: f32, dy: f32, dz: f32) -> f32 {
     let mut h = NoisePerm(NoisePerm(NoisePerm(x)+y)+z);
     h &= 15;
-    let u = select(h<8 || h==12 || h==13, dx, dy);
-    let v = select(h<4 || h==12 || h==13, dy, dz);
+    let u = select((h<8) | (h==12) | (h==13), dx, dy);
+    let v = select((h<4) | (h==12) | (h==13), dy, dz);
     select(h&1 != 0, -u, u) + select(h&2 != 0, -v, v)
 }
 
