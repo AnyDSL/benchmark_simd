@@ -68,7 +68,7 @@ writePPM(float *buf, int width, int height, const char *fn) {
 
 
 int main(int argc, char *argv[]) {
-    static unsigned int test_iterations[] = {3, 1};
+    static unsigned int test_iterations[] = {3, 3, 3};
     unsigned int width = 768;
     unsigned int height = 768;
     float x0 = -10;
@@ -83,9 +83,9 @@ int main(int argc, char *argv[]) {
             height *= scale;
         }
     }
-    if ((argc == 3) || (argc == 4)) {
-        for (int i = 0; i < 2; i++) {
-            test_iterations[i] = atoi(argv[argc - 2 + i]);
+    if ((argc >= 3) && (argc <= 5)) {
+        for (int i = 0; i < 3; i++) {
+            test_iterations[i] = atoi(argv[argc - 3 + i]);
         }
     }
     float *buf = new float[width*height];
@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
     // minimum time.
     //
     double minSerial = 1e30;
-    for (unsigned int i = 0; i < test_iterations[1]; ++i) {
+    for (unsigned int i = 0; i < test_iterations[2]; ++i) {
         reset_and_start_timer();
         noise_serial(x0, y0, x1, y1, width, height, buf);
         double dt = get_elapsed_mcycles();

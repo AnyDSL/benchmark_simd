@@ -58,11 +58,6 @@ using namespace ispc;
 
 #define NSUBSAMPLES        2
 
-#if defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
-#include <x86intrin.h>
-#endif
-
-
 extern void ao_serial(int w, int h, int nsubsamples, float image[]);
 extern "C" void ao_impala(int w, int h, int nsubsamples, float image[]);
 
@@ -112,10 +107,6 @@ savePPM(const char *fname, int w, int h)
 
 int main(int argc, char **argv)
 {
-    #if defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
-        _mm_setcsr(_mm_getcsr() | (_MM_FLUSH_ZERO_ON | _MM_DENORMALS_ZERO_ON));
-    #endif
-
     if (argc < 3) {
         printf ("%s\n", argv[0]);
         printf ("Usage: ao [width] [height] [ispc iterations] [AnyDSL iterations] [serial iterations]\n");
