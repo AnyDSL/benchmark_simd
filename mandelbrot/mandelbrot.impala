@@ -1,3 +1,5 @@
+static math = cpu_intrinsics;
+
 fn mandel(c_re: f32, c_im: f32, count: int) -> int {
     let mut z_re = c_re;
     let mut z_im = c_im;
@@ -10,7 +12,7 @@ fn mandel(c_re: f32, c_im: f32, count: int) -> int {
         let new_im = 2.f * z_re * z_im;
         z_re = c_re + new_re;
         z_im = c_im + new_im;
-        res = i
+        res = i-1;
     }
 
     res
@@ -18,18 +20,15 @@ fn mandel(c_re: f32, c_im: f32, count: int) -> int {
 
 extern
 fn mandelbrot_impala(x0: f32, y0: f32, x1: f32, y1: f32, width: int, height: int, maxIterations: int, output: &mut [int]) -> () {
-    let (dx, dy) = ((x1 - x0) / (width as f32), (y1 - y0) / (height as f32));
+    let dx = (x1 - x0) / (width as f32);
+    let dy = (y1 - y0) / (height as f32);
 
-    let vector_length = 8;
     for j in range(0, height) {
-        for ii in range_step(0, width, vector_length) {
-            for v in vectorize(vector_length) {
-                let out = bitcast[&mut [int]](rv_align(bitcast(output), 32));
-                let i = ii + v;
-                let (x, y) = (x0 + (i as f32) * dx, y0 + (j as f32) * dy);
-                let index = j * width + i;
-                out(index) = mandel(x, y, maxIterations);
-            }
+        for i in each(0, width) {
+            let x = x0 + (i as f32) * dx;
+            let y = y0 + (j as f32) * dy;
+            let index = j * width + i;
+            output(index) = mandel(x, y, maxIterations);
         }
     }
 }
