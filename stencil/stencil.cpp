@@ -45,20 +45,25 @@
 #include <math.h>
 #include "../timing.h"
 #include "stencil_ispc.h"
+
+//#if defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
+//#include <x86intrin.h>
+//#endif
+
 using namespace ispc;
 
 
 extern void loop_stencil_serial(int t0, int t1, int x0, int x1,
                                 int y0, int y1, int z0, int z1,
                                 int Nx, int Ny, int Nz,
-                                const float coef[5],
+                                const float coef[4],
                                 const float vsq[],
                                 float Aeven[], float Aodd[]);
 
 extern "C" void loop_stencil_impala(int t0, int t1, int x0, int x1,
                                     int y0, int y1, int z0, int z1,
                                     int Nx, int Ny, int Nz,
-                                    const float coef[5],
+                                    const float coef[4],
                                     const float vsq[],
                                     float Aeven[], float Aodd[]);
 
@@ -75,6 +80,10 @@ void InitData(int Nx, int Ny, int Nz, float *A[2], float *vsq) {
 
 
 int main(int argc, char *argv[]) {
+    //#if defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
+        //_mm_setcsr(_mm_getcsr() | (_MM_FLUSH_ZERO_ON | _MM_DENORMALS_ZERO_ON));
+    //#endif
+
     static unsigned int test_iterations[] = {3, 3, 3};//the last two numbers must be equal here
     int Nx = 256, Ny = 256, Nz = 256;
     int width = 4;
@@ -93,11 +102,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    float *Aserial[2], *Aispc[2];
+    float *Aserial[2], *Aispc[2], *Aimpala[2];
     Aserial[0] = new float [Nx * Ny * Nz];
     Aserial[1] = new float [Nx * Ny * Nz];
     Aispc[0] = new float [Nx * Ny * Nz];
     Aispc[1] = new float [Nx * Ny * Nz];
+    Aimpala[0] = new float [Nx * Ny * Nz];
+    Aimpala[1] = new float [Nx * Ny * Nz];
     float *vsq = new float [Nx * Ny * Nz];
 
     float coeff[4] = { 0.5, -.25, .125, -.0625 };
@@ -120,8 +131,7 @@ int main(int argc, char *argv[]) {
 
     printf("[stencil ispc 1 core]:\t\t[%.3f] million cycles\n", minTimeISPC);
 
-    InitData(Nx, Ny, Nz, Aispc, vsq);
-
+    InitData(Nx, Ny, Nz, Aimpala, vsq);
     //
     // Compute the image using the ispc implementation with tasks; report
     // the minimum time of three runs.
@@ -131,7 +141,7 @@ int main(int argc, char *argv[]) {
         reset_and_start_timer();
         loop_stencil_impala(0, 6, width, Nx - width, width, Ny - width,
                                 width, Nz - width, Nx, Ny, Nz, coeff, vsq,
-                                Aispc[0], Aispc[1]);
+                                Aimpala[0], Aimpala[1]);
         double dt = get_elapsed_mcycles();
         printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
         minTimeImpala = std::min(minTimeImpala, dt);
@@ -140,7 +150,6 @@ int main(int argc, char *argv[]) {
     printf("[stencil impala]:\t\t[%.3f] million cycles\n", minTimeImpala);
 
     InitData(Nx, Ny, Nz, Aserial, vsq);
-
     //
     // And run the serial implementation 3 times, again reporting the
     // minimum time.
@@ -162,6 +171,7 @@ int main(int argc, char *argv[]) {
            //minTimeSerial / minTimeISPC, minTimeSerial / minTimeISPCTasks);
 
     // Check for agreement
+#if 0
     int offset = 0;
     for (int z = 0; z < Nz; ++z)
         for (int y = 0; y < Ny; ++y)
@@ -173,5 +183,18 @@ int main(int argc, char *argv[]) {
                            x, y, z, Aispc[1][offset], Aserial[1][offset]);
             }
 
+    // Check for agreement
+    int offset = 0;
+    for (int z = 0; z < Nz; ++z)
+        for (int y = 0; y < Ny; ++y)
+            for (int x = 0; x < Nx; ++x, ++offset) {
+                float error = fabsf((Aserial[1][offset] - Aimpala[1][offset]) /
+                                    Aserial[1][offset]);
+                if (error > 1e-4)
+                    printf("Error @ (%d,%d,%d): impala = %f, serial = %f\n",
+                           x, y, z, Aimpala[1][offset], Aserial[1][offset]);
+            }
+
+#endif
     return 0;
 }
