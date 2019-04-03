@@ -1,0 +1,12 @@
+x aobench/
+  deferred/
+  gmres/
+x mandelbrot/
+x noise/
+x options/
+  perfbench/
+  rt/
+  sgemm/
+  sort/
+x stencil/
+x volume_rendering/
