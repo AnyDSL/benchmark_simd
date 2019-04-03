@@ -39,9 +39,19 @@ set (TARGET_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/options.cpp
                     ${CMAKE_CURRENT_SOURCE_DIR}/options_serial.cpp)
 set (ISPC_IA_TARGETS "sse2-i32x4,sse4-i32x4,avx1-i32x16,avx2-i32x16,avx512knl-i32x16,avx512skx-i32x16" CACHE STRING "ISPC IA targets")
 set (ISPC_ARM_TARGETS "neon" CACHE STRING "ISPC ARM targets")
+set(CLANG_FLAGS -march=native -O3)
+set(IMPALA_FLAGS --log-level info)
+anydsl_runtime_wrap(OPTIONS_ANYDSL
+    NAME "options_anydsl"
+    CLANG_FLAGS ${CLANG_FLAGS}
+    IMPALA_FLAGS ${IMPALA_FLAGS}
+    FILES ../util.impala options.impala)
+add_library(options_anydsl SHARED ${OPTIONS_ANYDSL})
+
 add_ispc_example(NAME "options"
               ISPC_IA_TARGETS ${ISPC_IA_TARGETS}
               ISPC_ARM_TARGETS ${ISPC_ARM_TARGETS}
               ISPC_SRC_NAME ${ISPC_SRC_NAME}
               TARGET_SOURCES ${TARGET_SOURCES}
+              LIBRARIES options_anydsl
               USE_COMMON_SETTINGS)

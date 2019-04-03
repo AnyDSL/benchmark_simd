@@ -1,3 +1,22 @@
+/*
+ * iterators
+ */
+
+static VECTOR_LENGTH = 8;
+
+fn @each(a: i32, b: i32, body: fn(i32) -> ()) -> () {
+    for i in range_step(a, b, VECTOR_LENGTH) {
+        for lane in vectorize(VECTOR_LENGTH) {
+            @@body(i + lane);
+        }
+    }
+}
+
+
+/*
+ * misc
+ */
+
 fn @lerp(a: f32, b: f32, k: f32) -> f32 {
     (1.0f - k) * a + k * b
 }

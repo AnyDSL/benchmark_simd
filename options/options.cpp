@@ -47,13 +47,10 @@ using std::max;
 #include "options_ispc.h"
 using namespace ispc;
 
-extern void black_scholes_serial(float Sa[], float Xa[], float Ta[],
-                                 float ra[], float va[],
-                                 float result[], int count);
-
-extern void binomial_put_serial(float Sa[], float Xa[], float Ta[],
-                                float ra[], float va[],
-                                float result[], int count);
+extern     void black_scholes_serial(float Sa[], float Xa[], float Ta[], float ra[], float va[], float result[], int count);
+extern "C" void black_scholes_impala(float Sa[], float Xa[], float Ta[], float ra[], float va[], float result[], int count);
+extern     void binomial_put_serial (float Sa[], float Xa[], float Ta[], float ra[], float va[], float result[], int count);
+extern "C" void binomial_put_impala (float Sa[], float Xa[], float Ta[], float ra[], float va[], float result[], int count);
 
 static void usage() {
     printf("usage: options [--count=<num options>]\n");
@@ -103,24 +100,24 @@ int main(int argc, char *argv[]) {
             sum += result[i];
         binomial_ispc = std::min(binomial_ispc, dt);
     }
-    printf("[binomial ispc, 1 thread]:\t[%.3f] million cycles (avg %f)\n",
+    printf("[binomial ispc]:\t[%.3f] million cycles (avg %f)\n",
            binomial_ispc, sum / nOptions);
 
     //
-    // Binomial options pricing model, ispc implementation, tasks
+    // Binomial options pricing model, impala
     //
-    double binomial_tasks = 1e30;
+    double binomial_impala = 1e30;
     for (int i = 0; i < 3; ++i) {
         reset_and_start_timer();
-        binomial_put_ispc_tasks(S, X, T, r, v, result, nOptions);
+        binomial_put_impala(S, X, T, r, v, result, nOptions);
         double dt = get_elapsed_mcycles();
         sum = 0.;
         for (int i = 0; i < nOptions; ++i)
             sum += result[i];
-        binomial_tasks = std::min(binomial_tasks, dt);
+        binomial_impala = std::min(binomial_impala, dt);
     }
-    printf("[binomial ispc, tasks]:\t\t[%.3f] million cycles (avg %f)\n",
-           binomial_tasks, sum / nOptions);
+    printf("[binomial impala]:\t\t[%.3f] million cycles (avg %f)\n",
+           binomial_impala, sum / nOptions);
 
     //
     // Binomial options, serial implementation
@@ -138,9 +135,6 @@ int main(int argc, char *argv[]) {
     printf("[binomial serial]:\t\t[%.3f] million cycles (avg %f)\n",
            binomial_serial, sum / nOptions);
 
-    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
-           binomial_serial / binomial_ispc, binomial_serial / binomial_tasks);
-
     //
     // Black-Scholes options pricing model, ispc implementation, 1 thread
     //
@@ -154,24 +148,24 @@ int main(int argc, char *argv[]) {
             sum += result[i];
         bs_ispc = std::min(bs_ispc, dt);
     }
-    printf("[black-scholes ispc, 1 thread]:\t[%.3f] million cycles (avg %f)\n",
+    printf("[black-scholes ispc]:\t[%.3f] million cycles (avg %f)\n",
            bs_ispc, sum / nOptions);
 
     //
-    // Black-Scholes options pricing model, ispc implementation, tasks
+    // Black-Scholes options pricing model, impala
     //
-    double bs_ispc_tasks = 1e30;
+    double bs_impala = 1e30;
     for (int i = 0; i < 3; ++i) {
         reset_and_start_timer();
-        black_scholes_ispc_tasks(S, X, T, r, v, result, nOptions);
+        black_scholes_impala(S, X, T, r, v, result, nOptions);
         double dt = get_elapsed_mcycles();
         sum = 0.;
         for (int i = 0; i < nOptions; ++i)
             sum += result[i];
-        bs_ispc_tasks = std::min(bs_ispc_tasks, dt);
+        bs_impala = std::min(bs_impala, dt);
     }
-    printf("[black-scholes ispc, tasks]:\t[%.3f] million cycles (avg %f)\n",
-           bs_ispc_tasks, sum / nOptions);
+    printf("[black-scholes impala]:\t[%.3f] million cycles (avg %f)\n",
+           bs_impala, sum / nOptions);
 
     //
     // Black-Scholes options pricing model, serial implementation
@@ -188,9 +182,6 @@ int main(int argc, char *argv[]) {
     }
     printf("[black-scholes serial]:\t\t[%.3f] million cycles (avg %f)\n", bs_serial,
            sum / nOptions);
-
-    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
-           bs_serial / bs_ispc, bs_serial / bs_ispc_tasks);
 
     return 0;
 }
