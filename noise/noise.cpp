@@ -66,6 +66,13 @@ writePPM(float *buf, int width, int height, const char *fn) {
     fclose(fp);
 }
 
+static double
+median(double* times, size_t n) {
+    if (n == 0) return 0.0f;
+    std::sort(times, times + n);
+    return times[n/2];
+}
+
 
 int main(int argc, char *argv[]) {
     static unsigned int test_iterations[] = {3, 3, 3};
@@ -90,59 +97,27 @@ int main(int argc, char *argv[]) {
     }
     float *buf = new float[width*height];
 
-    //
-    // Compute the image using the ispc implementation; report the minimum
-    // time of three runs.
-    //
-    double minISPC = 1e30;
-    for (unsigned int i = 0; i < test_iterations[0]; ++i) {
-        reset_and_start_timer();
-        noise_ispc(x0, y0, x1, y1, width, height, buf);
-        double dt = get_elapsed_mcycles();
-        printf("@time of ISPC run:\t\t\t[%.3f] million cycles\n", dt);
-        minISPC = std::min(minISPC, dt);
-    }
+    unsigned int maxTestIters = std::max(test_iterations[0], std::max(test_iterations[1], test_iterations[2]));
+    double times[maxTestIters];
 
-    printf("[noise ispc]:\t\t\t[%.3f] million cycles\n", minISPC);
-    writePPM(buf, width, height, "noise-ispc.ppm");
-
-    // Clear out the buffer
-    for (unsigned int i = 0; i < width * height; ++i)
+#define BENCH(iter, fn, res, name) \
+    double res; \
+    for (unsigned int i = 0; i < iter; ++i) { \
+        reset_and_start_timer(); \
+        fn(x0, y0, x1, y1, width, height, buf); \
+        double dt = get_elapsed_mcycles(); \
+        printf("@time of " name " run:\t\t\t[%.3f] million cycles\n", dt); \
+        times[i] = dt; \
+    } \
+    res = median(times, iter); \
+    printf("[noise " name "]:\t\t\t[%.3f] million cycles\n", res); \
+    writePPM(buf, width, height, "noise-" name ".ppm"); \
+    for (unsigned int i = 0; i < width * height; ++i) \
         buf[i] = 0;
 
-    //
-    // And run the impala implementation 3 times, again reporting the
-    // minimum time.
-    //
-    double minImpala = 1e30;
-    for (unsigned int i = 0; i < test_iterations[1]; ++i) {
-        reset_and_start_timer();
-        noise_impala(x0, y0, x1, y1, width, height, buf);
-        double dt = get_elapsed_mcycles();
-        printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
-        minImpala = std::min(minImpala, dt);
-    }
-
-    printf("[noise impala]:\t\t\t[%.3f] million cycles\n", minImpala);
-    writePPM(buf, width, height, "noise-impala.ppm");
-
-    //
-    // And run the serial implementation 3 times, again reporting the
-    // minimum time.
-    //
-    double minSerial = 1e30;
-    for (unsigned int i = 0; i < test_iterations[2]; ++i) {
-        reset_and_start_timer();
-        noise_serial(x0, y0, x1, y1, width, height, buf);
-        double dt = get_elapsed_mcycles();
-        printf("@time of serial run:\t\t\t[%.3f] million cycles\n", dt);
-        minSerial = std::min(minSerial, dt);
-    }
-
-    printf("[noise serial]:\t\t\t[%.3f] million cycles\n", minSerial);
-    writePPM(buf, width, height, "noise-serial.ppm");
-
-    //printf("\t\t\t\t(%.2fx speedup from ISPC)\n", minSerial/minISPC);
-
+    BENCH(test_iterations[0], noise_ispc,   timeISPC,   "ispc")
+    BENCH(test_iterations[1], noise_impala, timeImpala, "impala")
+    BENCH(test_iterations[2], noise_serial, timeSerial, "serial")
+    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n", timeSerial / timeISPC, timeSerial / timeImpala);
     return 0;
 }
