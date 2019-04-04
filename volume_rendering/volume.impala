@@ -149,10 +149,8 @@ fn raymarch(density: &[f32], nVoxels: &[int * 3], ray: Ray) -> f32 {
     let pMax     = make_vec3( 1.8f,  2.3f, 1.8f);
     let lightPos = make_vec3(-1.0f,  4.0f, 1.5f);
 
-    // cif
-    if (!IntersectP(ray, pMin, pMax, &mut rayT0, &mut rayT1)) {
-        0.f
-    } else {
+    let mut res = 0.0f;
+    cif (IntersectP(ray, pMin, pMax, &mut rayT0, &mut rayT1), || {
         rayT0 = math.fmaxf(rayT0, 0.f);
 
         // Parameters that define the volume scattering characteristics and
@@ -173,12 +171,12 @@ fn raymarch(density: &[f32], nVoxels: &[int * 3], ray: Ray) -> f32 {
         let dirStep = vec3_mulf(ray.dir, stepT);
         // cwhile
         //let mut n = 0;
-        while (t < rayT1) {
+        while t < rayT1 {
             let d = Density(pos, pMin, pMax, density, nVoxels);
 
             // terminate once attenuation is high
             let atten = math.expf(-tau);
-            if (atten < .005f) { break() }
+            if atten < .005f { break() }
 
             // direct lighting
             let Li = lightIntensity / distanceSquared(lightPos, pos) *
@@ -193,8 +191,9 @@ fn raymarch(density: &[f32], nVoxels: &[int * 3], ray: Ray) -> f32 {
         }
 
         // Gamma correction
-        math.powf(L, 1.f / 2.2f)
-    }
+        res = math.powf(L, 1.f / 2.2f);
+    });
+    res
 }
 
 // Utility routine used by both the task-based and the single-core entrypoints.

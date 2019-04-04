@@ -56,6 +56,12 @@ static void usage() {
     printf("usage: options [--count=<num options>]\n");
 }
 
+static double
+median(double* times, size_t n) {
+    if (n == 0) return 0.0f;
+    std::sort(times, times + n);
+    return times[n/2];
+}
 
 int main(int argc, char *argv[]) {
     int nOptions = 128*1024;
@@ -70,12 +76,15 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    int maxIters = 7;
+
     float *S = new float[nOptions];
     float *X = new float[nOptions];
     float *T = new float[nOptions];
     float *r = new float[nOptions];
     float *v = new float[nOptions];
     float *result = new float[nOptions];
+    double* times = new double[maxIters];
 
     for (int i = 0; i < nOptions; ++i) {
         S[i] = 100;  // stock price
@@ -86,102 +95,32 @@ int main(int argc, char *argv[]) {
     }
 
     double sum;
+    double timeISPC, timeImpala, timeSerial;
 
-    //
-    // Binomial options pricing model, ispc implementation
-    //
-    double binomial_ispc = 1e30;
-    for (int i = 0; i < 3; ++i) {
-        reset_and_start_timer();
-        binomial_put_ispc(S, X, T, r, v, result, nOptions);
-        double dt = get_elapsed_mcycles();
-        sum = 0.;
-        for (int i = 0; i < nOptions; ++i)
-            sum += result[i];
-        binomial_ispc = std::min(binomial_ispc, dt);
+#define BENCH(iters, fn, res, name) \
+    { \
+        for (int i = 0; i < iters; ++i) { \
+            reset_and_start_timer(); \
+            fn(S, X, T, r, v, result, nOptions); \
+            double dt = get_elapsed_mcycles(); \
+            sum = 0.; \
+            for (int i = 0; i < nOptions; ++i) \
+                sum += result[i]; \
+            times[i] = dt; \
+        } \
+        res = median(times, iters); \
+        printf("[" name "]:\t[%.3f] million cycles (avg %f)\n", res, sum / nOptions); \
     }
-    printf("[binomial ispc]:\t[%.3f] million cycles (avg %f)\n",
-           binomial_ispc, sum / nOptions);
 
-    //
-    // Binomial options pricing model, impala
-    //
-    double binomial_impala = 1e30;
-    for (int i = 0; i < 3; ++i) {
-        reset_and_start_timer();
-        binomial_put_impala(S, X, T, r, v, result, nOptions);
-        double dt = get_elapsed_mcycles();
-        sum = 0.;
-        for (int i = 0; i < nOptions; ++i)
-            sum += result[i];
-        binomial_impala = std::min(binomial_impala, dt);
-    }
-    printf("[binomial impala]:\t\t[%.3f] million cycles (avg %f)\n",
-           binomial_impala, sum / nOptions);
+    BENCH(7, binomial_put_ispc,   timeISPC,   "binomial ispc")
+    BENCH(7, binomial_put_impala, timeImpala, "binomial impala")
+    BENCH(7, binomial_put_serial, timeSerial, "binomial serial")
+    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n", timeSerial / timeISPC, timeSerial / timeImpala);
 
-    //
-    // Binomial options, serial implementation
-    //
-    double binomial_serial = 1e30;
-    for (int i = 0; i < 3; ++i) {
-        reset_and_start_timer();
-        binomial_put_serial(S, X, T, r, v, result, nOptions);
-        double dt = get_elapsed_mcycles();
-        sum = 0.;
-        for (int i = 0; i < nOptions; ++i)
-            sum += result[i];
-        binomial_serial = std::min(binomial_serial, dt);
-    }
-    printf("[binomial serial]:\t\t[%.3f] million cycles (avg %f)\n",
-           binomial_serial, sum / nOptions);
-
-    //
-    // Black-Scholes options pricing model, ispc implementation, 1 thread
-    //
-    double bs_ispc = 1e30;
-    for (int i = 0; i < 3; ++i) {
-        reset_and_start_timer();
-        black_scholes_ispc(S, X, T, r, v, result, nOptions);
-        double dt = get_elapsed_mcycles();
-        sum = 0.;
-        for (int i = 0; i < nOptions; ++i)
-            sum += result[i];
-        bs_ispc = std::min(bs_ispc, dt);
-    }
-    printf("[black-scholes ispc]:\t[%.3f] million cycles (avg %f)\n",
-           bs_ispc, sum / nOptions);
-
-    //
-    // Black-Scholes options pricing model, impala
-    //
-    double bs_impala = 1e30;
-    for (int i = 0; i < 3; ++i) {
-        reset_and_start_timer();
-        black_scholes_impala(S, X, T, r, v, result, nOptions);
-        double dt = get_elapsed_mcycles();
-        sum = 0.;
-        for (int i = 0; i < nOptions; ++i)
-            sum += result[i];
-        bs_impala = std::min(bs_impala, dt);
-    }
-    printf("[black-scholes impala]:\t[%.3f] million cycles (avg %f)\n",
-           bs_impala, sum / nOptions);
-
-    //
-    // Black-Scholes options pricing model, serial implementation
-    //
-    double bs_serial = 1e30;
-    for (int i = 0; i < 3; ++i) {
-        reset_and_start_timer();
-        black_scholes_serial(S, X, T, r, v, result, nOptions);
-        double dt = get_elapsed_mcycles();
-        sum = 0.;
-        for (int i = 0; i < nOptions; ++i)
-            sum += result[i];
-        bs_serial = std::min(bs_serial, dt);
-    }
-    printf("[black-scholes serial]:\t\t[%.3f] million cycles (avg %f)\n", bs_serial,
-           sum / nOptions);
+    BENCH(7, black_scholes_ispc,   timeISPC,   "black-scholes ispc")
+    BENCH(7, black_scholes_impala, timeImpala, "black-scholes impala")
+    BENCH(7, black_scholes_serial, timeSerial, "black-scholes serial")
+    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n", timeSerial / timeISPC, timeSerial / timeImpala);
 
     return 0;
 }

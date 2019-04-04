@@ -24,14 +24,6 @@ struct Ray {
     dir: Vec3,
 };
 
-fn @cif(c: bool, t: fn () -> ()) -> () {
-    if rv_any(c) {
-        if c {
-            @@t()
-        }
-    }
-}
-
 fn @ray_plane_intersect(isect: &mut Isect, ray: &Ray, plane: &Plane) -> () {
     let d = -vec3_dot(plane.p, plane.n);
     let v = vec3_dot(ray.dir, plane.n);

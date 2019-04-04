@@ -28,6 +28,15 @@ fn @lerp2(a: f32, b: f32, c: f32, k1: f32, k2: f32) -> f32 {
 fn floatbits(bits: u32) -> f32 { bitcast(bits) }
 fn intbits(f: f32) -> u32 { bitcast(f) }
 
+fn @cif(c: bool, t: fn () -> ()) -> () {
+    if rv_any(c) {
+        if c {
+            @@t()
+        }
+    }
+}
+
+
 /*
  * Vec2, Vec3, Vec4
  */
@@ -186,7 +195,7 @@ fn @clamp(i: i32, a: i32, b: i32) -> i32 { math.min(math.max(i, a), b) }
 fn @clampf(i: f32, a: f32, b: f32) -> f32 { math.fminf(math.fmaxf(i, a), b) }
 
 /*
- * math: exp, pow
+ * math: exp, pow, log
  */
 
 fn ldexp(x: f32, mut n: u32) -> f32 {
@@ -197,6 +206,16 @@ fn ldexp(x: f32, mut n: u32) -> f32 {
     n = (n << 23u) + ex;
     ix |= n; // insert new exponent
     floatbits(ix)
+}
+
+fn frexp(x: f32) -> (f32, u32) {
+    let mut ex = 0x7F800000u;              // exponent mask
+    let mut ix = intbits(x);
+    ex &= ix;
+    ix &= !0x7F800000u;  // clear exponent
+    let pw2 = (ex >> 23u) - 126u; // compute exponent
+    ix |= 0x3F000000u;         // insert exponent +1 in x
+    (floatbits(ix), pw2)
 }
 
 fn exp(mut x_full: f32) -> f32 {
@@ -262,6 +281,93 @@ fn exp(mut x_full: f32) -> f32 {
         result = select(overflow, floatbits(InfBits as u32), result);
         result = select(underflow, 0.f, result);
         result
+    }
+}
+
+fn @log(x: f32) -> f32 {
+    fn @range_reduce(input: f32) -> (f32, u32) {
+        let int_version = intbits(input);
+        let nonexponent_mask = 0x807FFFFFu;
+
+        let exponent_neg1 = (126u << 23u);
+        let biased_exponent = int_version >> 23u;
+        let offset_exponent = biased_exponent + 1u;
+        let exponent = offset_exponent - 127u; // get the real value
+        let blended = (int_version & nonexponent_mask) | (exponent_neg1);
+        let reduced = floatbits(blended);
+        (reduced, exponent)
+    }
+
+    let fast = true;
+    if fast {
+        let (x_, e_) = frexp(x);
+        let mut x_full = x_;
+        let mut e = e_;
+
+        let x_smaller_SQRTHF = select(0.707106781186547524f > x_full, 0xffffffffu, 0u);
+        e += x_smaller_SQRTHF;
+        let mut ix_add = intbits(x_full);
+        ix_add &= x_smaller_SQRTHF;
+        x_full += floatbits(ix_add) - 1.f;
+
+        let mut z = x_full * x_full;
+        let mut y =
+            ((((((((7.0376836292E-2f * x_full
+                    + -1.1514610310E-1f) * x_full
+                   + 1.1676998740E-1f) * x_full
+                  + -1.2420140846E-1f) * x_full
+                 + 1.4249322787E-1f) * x_full
+                + -1.6668057665E-1f) * x_full
+               + 2.0000714765E-1f) * x_full
+              + -2.4999993993E-1f) * x_full
+             + 3.3333331174E-1f) * x_full * z;
+
+        let fe = e as f32;
+        y += fe * -2.12194440e-4f;
+        y -= 0.5f * z;
+        z  = x_full + y;
+        z + 0.693359375f * fe
+    } else {
+        let NaN_bits = 0x7fc00000u;
+        let Neg_Inf_bits = 0xFF800000u;
+        let NaN = floatbits(NaN_bits);
+        let neg_inf = floatbits(Neg_Inf_bits);
+        let use_nan = x < 0.f;
+        let use_inf = x == 0.f;
+        let exceptional = use_nan || use_inf;
+        let one = 1.0f;
+
+        let patched = select(exceptional, one, x);
+        let (reduced, exponent) = range_reduce(patched);
+
+        let ln2 = 0.693147182464599609375f;
+
+        let x1 = one - reduced;
+        let c1 = 0.50000095367431640625f;
+        let c2 = 0.33326041698455810546875f;
+        let c3 = 0.2519190013408660888671875f;
+        let c4 = 0.17541764676570892333984375f;
+        let c5 = 0.3424419462680816650390625f;
+        let c6 = -0.599632322788238525390625f;
+        let c7 = +1.98442304134368896484375f;
+        let c8 = -2.4899270534515380859375f;
+        let c9 = +1.7491014003753662109375f;
+
+        let mut result = x1 * c9 + c8;
+        result = x1 * result + c7;
+        result = x1 * result + c6;
+        result = x1 * result + c5;
+        result = x1 * result + c4;
+        result = x1 * result + c3;
+        result = x1 * result + c2;
+        result = x1 * result + c1;
+        result = x1 * result + one;
+
+        // Equation was for -(ln(red)/(1-red))
+        result *= -x1;
+        result += (exponent as f32) * ln2;
+
+        select(exceptional, select(use_nan, NaN, neg_inf), result)
     }
 }
 

@@ -65,7 +65,7 @@ static unsigned int test_iterations[] = {3, 7, 1};
 static unsigned int width, height;
 static unsigned char *img;
 static float *fimg;
-
+static double* times;
 
 static unsigned char
 clamp(float f)
@@ -104,6 +104,12 @@ savePPM(const char *fname, int w, int h)
     printf("Wrote image file %s\n", fname);
 }
 
+static double
+median(double* times, size_t n) {
+    if (n == 0) return 0.0f;
+    std::sort(times, times + n);
+    return times[n/2];
+}
 
 int main(int argc, char **argv)
 {
@@ -122,16 +128,17 @@ int main(int argc, char **argv)
         width = atoi (argv[1]);
         height = atoi (argv[2]);
     }
+    unsigned int maxIter = std::max(test_iterations[0], std::max(test_iterations[1], test_iterations[2]));
 
     // Allocate space for output images
     img = new unsigned char[width * height * 3];
     fimg = new float[width * height * 3];
+    times = new double[maxIter];
 
     //
     // Run the ispc path, test_iterations times, and report the minimum
     // time for any of them.
     //
-    double minTimeISPC = 1e30;
     for (unsigned int i = 0; i < test_iterations[0]; i++) {
         memset((void *)fimg, 0, sizeof(float) * width * height * 3);
         assert(NSUBSAMPLES == 2);
@@ -140,19 +147,18 @@ int main(int argc, char **argv)
         ao_ispc(width, height, NSUBSAMPLES, fimg);
         double t = get_elapsed_mcycles();
         printf("@time of ISPC run:\t\t\t[%.3f] million cycles\n", t);
-        minTimeISPC = std::min(minTimeISPC, t);
+        times[i] = t;
     }
+    double medISPC = median(times, test_iterations[0]);
 
     // Report results and save image
-    printf("[aobench ispc]:\t\t\t[%.3f] million cycles (%d x %d image)\n",
-           minTimeISPC, width, height);
+    printf("[aobench ispc]:\t\t\t[%.3f] million cycles (%d x %d image)\n", medISPC, width, height);
     savePPM("ao-ispc.ppm", width, height);
 
     //
     // Run the AnyDSL path, test_iterations times, and report the
     // minimum time for any of them.
     //
-    double minTimeAnyDSL = 1e30;
     for (unsigned int i = 0; i < test_iterations[1]; i++) {
         memset((void *)fimg, 0, sizeof(float) * width * height * 3);
         assert(NSUBSAMPLES == 2);
@@ -161,33 +167,31 @@ int main(int argc, char **argv)
         ao_impala(width, height, NSUBSAMPLES, fimg);
         double t = get_elapsed_mcycles();
         printf("@time of AnyDSL run:\t\t\t[%.3f] million cycles\n", t);
-        minTimeAnyDSL = std::min(minTimeAnyDSL, t);
+        times[i] = t;
     }
+    double medAnyDSL = median(times, test_iterations[1]);
 
     // Report results and save image
-    printf("[aobench AnyDSL]:\t\t[%.3f] million cycles (%d x %d image)\n",
-           minTimeAnyDSL, width, height);
+    printf("[aobench AnyDSL]:\t\t[%.3f] million cycles (%d x %d image)\n", medAnyDSL, width, height);
     savePPM("ao-anydsl.ppm", width, height);
 
     //
     // Run the serial path, again test_iteration times, and report the
     // minimum time.
     //
-    double minTimeSerial = 1e30;
     for (unsigned int i = 0; i < test_iterations[2]; i++) {
         memset((void *)fimg, 0, sizeof(float) * width * height * 3);
         reset_and_start_timer();
         ao_serial(width, height, NSUBSAMPLES, fimg);
         double t = get_elapsed_mcycles();
         printf("@time of serial run:\t\t\t\t[%.3f] million cycles\n", t);
-        minTimeSerial = std::min(minTimeSerial, t);
+        times[i] = t;
     }
+    double medSerial = median(times, test_iterations[2]);
 
     // Report more results, save another image...
-    printf("[aobench serial]:\t\t[%.3f] million cycles (%d x %d image)\n", minTimeSerial,
-           width, height);
-    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n",
-           minTimeSerial / minTimeISPC, minTimeSerial / minTimeAnyDSL);
+    printf("[aobench serial]:\t\t[%.3f] million cycles (%d x %d image)\n", medSerial, width, height);
+    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n", medSerial / medISPC, medSerial / medAnyDSL);
     savePPM("ao-serial.ppm", width, height);
 
     return 0;
