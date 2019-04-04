@@ -78,6 +78,12 @@ void InitData(int Nx, int Ny, int Nz, float *A[2], float *vsq) {
             }
 }
 
+static double
+median(double* times, size_t n) {
+    if (n == 0) return 0.0f;
+    std::sort(times, times + n);
+    return times[n/2];
+}
 
 int main(int argc, char *argv[]) {
     //#if defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
@@ -102,6 +108,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    unsigned int maxTestIters = std::max(test_iterations[0], std::max(test_iterations[1], test_iterations[2]));
+    double times[maxTestIters];
+
     float *Aserial[2], *Aispc[2], *Aimpala[2];
     Aserial[0] = new float [Nx * Ny * Nz];
     Aserial[1] = new float [Nx * Ny * Nz];
@@ -113,62 +122,23 @@ int main(int argc, char *argv[]) {
 
     float coeff[4] = { 0.5, -.25, .125, -.0625 };
 
-    InitData(Nx, Ny, Nz, Aispc, vsq);
-    //
-    // Compute the image using the ispc implementation on one core; report
-    // the minimum time of three runs.
-    //
-    double minTimeISPC = 1e30;
-    for (unsigned int i = 0; i < test_iterations[0]; ++i) {
-        reset_and_start_timer();
-        loop_stencil_ispc(0, 6, width, Nx - width, width, Ny - width,
-                          width, Nz - width, Nx, Ny, Nz, coeff, vsq,
-                          Aispc[0], Aispc[1]);
-        double dt = get_elapsed_mcycles();
-        printf("@time of ISPC run:\t\t\t[%.3f] million cycles\n", dt);
-        minTimeISPC = std::min(minTimeISPC, dt);
-    }
+#define BENCH(iter, fn, res, name, bufs) \
+    double res; \
+    InitData(Nx, Ny, Nz, bufs, vsq); \
+    for (unsigned int i = 0; i < iter; ++i) { \
+        reset_and_start_timer(); \
+        fn(0, 6, width, Nx - width, width, Ny - width, width, Nz - width, Nx, Ny, Nz, coeff, vsq, bufs[0], bufs[1]); \
+        double dt = get_elapsed_mcycles(); \
+        printf("@time of " name " run:\t\t\t[%.3f] million cycles\n", dt); \
+        times[i] = dt; \
+    } \
+    res = median(times, iter); \
+    printf("[stencil " name "]:\t\t[%.3f] million cycles\n", res);
 
-    printf("[stencil ispc 1 core]:\t\t[%.3f] million cycles\n", minTimeISPC);
-
-    InitData(Nx, Ny, Nz, Aimpala, vsq);
-    //
-    // Compute the image using the ispc implementation with tasks; report
-    // the minimum time of three runs.
-    //
-    double minTimeImpala = 1e30;
-    for (unsigned int i = 0; i < test_iterations[1]; ++i) {
-        reset_and_start_timer();
-        loop_stencil_impala(0, 6, width, Nx - width, width, Ny - width,
-                                width, Nz - width, Nx, Ny, Nz, coeff, vsq,
-                                Aimpala[0], Aimpala[1]);
-        double dt = get_elapsed_mcycles();
-        printf("@time of impala run:\t\t\t[%.3f] million cycles\n", dt);
-        minTimeImpala = std::min(minTimeImpala, dt);
-    }
-
-    printf("[stencil impala]:\t\t[%.3f] million cycles\n", minTimeImpala);
-
-    InitData(Nx, Ny, Nz, Aserial, vsq);
-    //
-    // And run the serial implementation 3 times, again reporting the
-    // minimum time.
-    //
-    double minTimeSerial = 1e30;
-    for (unsigned int i = 0; i < test_iterations[2]; ++i) {
-        reset_and_start_timer();
-        loop_stencil_serial(0, 6, width, Nx-width, width, Ny - width,
-                            width, Nz - width, Nx, Ny, Nz, coeff, vsq,
-                            Aserial[0], Aserial[1]);
-        double dt = get_elapsed_mcycles();
-        printf("@time of serial run:\t\t\t[%.3f] million cycles\n", dt);
-        minTimeSerial = std::min(minTimeSerial, dt);
-    }
-
-    printf("[stencil serial]:\t\t[%.3f] million cycles\n", minTimeSerial);
-
-    //printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n",
-           //minTimeSerial / minTimeISPC, minTimeSerial / minTimeISPCTasks);
+    BENCH(test_iterations[0], loop_stencil_ispc,   timeISPC,   "ispc",   Aispc);
+    BENCH(test_iterations[1], loop_stencil_impala, timeImpala, "impala", Aimpala);
+    BENCH(test_iterations[2], loop_stencil_serial, timeSerial, "serial", Aserial);
+    printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from AnyDSL)\n", timeSerial / timeISPC, timeSerial / timeImpala);
 
     // Check for agreement
 #if 0
